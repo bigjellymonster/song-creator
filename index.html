@@ -507,7 +507,7 @@ const PRESETS = {
 // than cheerful, rock swinging between triumphant and bleak, children's staying
 // bright on purpose.
 const VARY = {
-  ambient:{ progFeel:['default','bittersweet','bittersweet'], mode:['major','minor'], compFeel:['hold','push','pulse','swell'], tempo:[58,78], comp:['softpad','piano','polysynth','stringbox','glass','vox','grand','reed'],
+  ambient:{ progFeel:['default','bittersweet','bittersweet'], mode:['major','minor'], compFeel:['hold','push','pulse','swell'], tempo:[58,78], comp:['softpad','softpad','piano','polysynth','stringbox','glass','vox','grand'],
     pad:['strings','choir','synthpad','stringbox','glass','realstrings','reed'], padWhen:['chorus','always'],
     bassPattern:['long','arp','pedal'], lead:['piano','vibes','sax','realflute','grand'], arp:['sparse','8'], arpSound:['piano','vibes'],
     brightness:[.35,.58], space:[.7,.95], drumVar:[0,3], arpFigure:['up','updown','wander'],
@@ -1103,6 +1103,14 @@ function voScore(v, prev, center){
   for (const n of v){ let d = Infinity; for (const m of prev) d = Math.min(d, Math.abs(n - m)); cost += d; }
   cost += Math.abs(v[v.length-1] - prev[prev.length-1]) * 1.3;   // a smooth top voice sounds played
   cost += Math.abs(v[0] - prev[0]) * .7;
+  // Smooth voice leading was winning so completely that a new chord kept three
+  // of its four notes on the same pitches — which the ear hears as the previous
+  // chord struck again, not as a change. Common tones are the point; three of
+  // them is a hand that never moved.
+  let same = 0;
+  for (const n of v) if (prev.includes(n)) same++;
+  cost += same >= 3 ? 9 : same === 2 ? 2.5 : 0;
+  if (v[v.length-1] === prev[prev.length-1]) cost += 4;          // the top voice has to move
   return cost;
 }
 function vo(ch, center){
@@ -1475,6 +1483,26 @@ const FILLS = [
   [['roll',0,.4],['roll',.25,.44],['snare',.5,.66],['ghost',.75,.18],['roll',1.25,.5],['roll',1.5,.58],['snare',1.75,.86]]
 ];
 
+// A layer that simply stops at a section seam sounds like the tape was cut: the
+// arrangement drops the chords halfway through a verse and the last one ends
+// square on the boundary, leaving fourteen seconds of nothing where it was.
+// Players don't do that — they let the last chord ring as the texture changes.
+// So wherever a part is about to go quiet for a bar or more, its final note
+// hangs on across the join instead of ending on the beat.
+const RING = { chords:3.5, pad:6, arp:1.5, lead:2, bass:1 };
+function letRing(ev){
+  const by = {};
+  for (const e of ev){ if (e.tr === 'drums') continue; (by[e.tr] = by[e.tr] || []).push(e); }
+  for (const tr in by){
+    const list = by[tr].sort((a, b) => a.b - b.b);
+    for (let i = 0; i < list.length; i++){
+      const e = list[i], next = list[i + 1];
+      const gap = next ? next.b - (e.b + e.l) : song.totalBeats - (e.b + e.l);
+      if (gap < 4) continue;                       // still playing; nothing to cover
+      e.l += Math.min(RING[tr] || 2, gap - .5);    // never run into whatever comes next
+    }
+  }
+}
 function arrange(){
   const p = song.p, ev = [];
   resetVoicing();
@@ -1770,6 +1798,7 @@ function arrange(){
       }
     }
   });
+  letRing(ev);
   ev.sort((a, b) => a.b - b.b);
   song.events = ev;
 }
@@ -1857,6 +1886,9 @@ const PAD_LEVEL = { strings:-49.0, organ:-37.7, synthpad:-48.7, choir:-39.2, str
                     realstrings:-39.1, pipes:-41.7, reed:-43.2 };
 // Balance between the parts, in dB. Measured, then set so every layer is actually audible:
 // the bass had been sitting level with the entire mix while the chords were 21 dB under it.
+// the pack's samples are 3.2s; hold a little under that, and overlap the
+// re-strikes so the seam is a swell rather than a gap
+const SMP_HOLD = 2.9, SMP_LAP = .38;
 const TRACK_DB = { drums:-1, bass:-7, chords:4, pad:13, arp:10, lead:0 };
 // chords vary hugely by genre because a distorted guitar and a soft pad are not comparable
 const CHORD_DB = { ambient:-4, retro:9, lofi:6, funk:6, rock:-9, goth:9, folk:4, kids:4 };
@@ -1874,6 +1906,7 @@ const TONE_LOW = { ambient:2000, retro:1400, lofi:2800, funk:2400, rock:2200, go
 // Everything here is optional: if the pack is missing or fails to decode, each
 // sampled voice falls back to the synthesised one it was modelled on.
 const SMP = {};
+const SMP_SUS = {};          // instrument -> does a held note actually keep sounding?
 let smpState = 'none';
 function smpHave(name){ return !!(SMP[name] && Object.keys(SMP[name]).length); }
 function loadSamples(pack){
@@ -1891,6 +1924,25 @@ function loadSamples(pack){
   }
   return Promise.all(jobs).then(() => {
     smpState = Object.keys(SMP).some(k => smpHave(k)) ? 'ready' : 'failed';
+    // Which of these instruments actually hold a note? A harmonium, organ,
+    // violin or flute sits at full level until the sample simply stops, so a
+    // long note has to be re-articulated. A piano or a plucked guitar decays to
+    // nothing on its own, and re-striking one would be heard as extra notes.
+    // Measure it rather than keeping a list: compare the energy near the end of
+    // the sample with the energy a third of the way in.
+    for (const inst of Object.keys(SMP)){
+      const ks = Object.keys(SMP[inst]); if (!ks.length) continue;
+      const d = SMP[inst][ks[Math.floor(ks.length/2)]].getChannelData(0);
+      const band = (a, b) => { let s2 = 0; const i0 = Math.floor(d.length*a), i1 = Math.floor(d.length*b);
+        for (let i = i0; i < i1; i++) s2 += d[i]*d[i];
+        return 10*Math.log10(s2/Math.max(1, i1 - i0) + 1e-12); };
+      // The measured gap is decisive: organ, violin, flute, sax and trumpet change
+      // by under 5 dB across the sample; harmonium -4.2; while the guitars sit at
+      // -6 to -8, piano -16 and xylophone -55. Anything that loses more than 5 dB
+      // is decaying on purpose and must be left alone — a re-struck piano is heard
+      // as extra notes, which is worse than a sustain ending slightly early.
+      SMP_SUS[inst] = (band(.8, .9) - band(.25, .35)) > -5;
+    }
     return smpState === 'ready';
   });
 }
@@ -1976,6 +2028,7 @@ function makeRig(){
     if (!Object.keys(urls).length) return null;
     const s = fx(new Tone.Sampler({ urls, ...(opts || {}) }));
     s.volume.value = db;
+    s._sustains = [].concat(names).some(n => SMP_SUS[n]);
     return s;
   };
 
@@ -2490,10 +2543,26 @@ function makeRig(){
 
   return {
     vol, bed, ready: Promise.all(readies),
+    // Tone 14's Sampler cannot loop — it has no loop, loopStart or loopEnd — and
+    // every sample in the pack is exactly 3.2 seconds. So a held note does not
+    // fade, it stops dead partway through the bar, which on a harmonium reads as
+    // a stab once a bar rather than a pad. A real player re-articulates a long
+    // note anyway (a bellows push, a bow change), so that is what a long note on
+    // a sampled voice becomes: overlapping re-strikes, each a little softer.
     play(tr, notes, dur, time, vel){
       const i = inst[tr]; if (!i) return;
-      if (i.mono) i.n.triggerAttackRelease(hz(notes[0]), dur, time, vel);
-      else i.n.triggerAttackRelease(notes.map(hz), dur, time, vel);
+      const fire = (d, t, v) => i.mono ? i.n.triggerAttackRelease(hz(notes[0]), d, t, v)
+                                       : i.n.triggerAttackRelease(notes.map(hz), d, t, v);
+      if (i.n instanceof Tone.Sampler && i.n._sustains && dur > SMP_HOLD){
+        const step = SMP_HOLD - SMP_LAP;
+        let t = time, left = dur, n = 0;
+        while (left > .08 && n < 24){
+          fire(Math.min(left, SMP_HOLD) + SMP_LAP, t, vel * (n ? .8 : 1));
+          t += step; left -= step; n++;
+        }
+        return;
+      }
+      fire(dur, time, vel);
     },
     drum(d, time, vel){ const f = D[d]; if (f) f(time, vel); },
     // A filter that opens as the song lifts. Chained ramps need the last scheduled

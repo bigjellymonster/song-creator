@@ -1,7 +1,7 @@
 // Cache-first app shell. The whole app is one HTML file, so "offline" just means
 // holding on to that file plus the icons. Bump CACHE to ship an update: the new
 // worker installs alongside, then takes over and deletes the old cache.
-const CACHE = 'song-sketcher-2f272597bb';
+const CACHE = 'song-sketcher-6765910536';
 const ASSETS = ['./', './index.html', './manifest.webmanifest',
                 './icon-192.png', './icon-512.png', './icon-maskable-512.png',
                 './apple-touch-icon.png', './favicon-32.png'];
