@@ -216,7 +216,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
    composited off the main thread, which matters because this screen is the one
    running audio on a 1.2s lookahead -- a layout-triggering animation here would
    show up as a dropout, not as a slow sparkle. */
-.hssky{position:absolute;inset:0;pointer-events:none;border-radius:20px;
+.hssky{position:absolute;inset:0;pointer-events:none;border-radius:20px;z-index:0;
   background:linear-gradient(120deg,#FFD6EF,#D9E3FF,#D4FBEE,#FFF4D2,#F0D9FF,#FFD6EF);
   background-size:320% 320%;opacity:.85;
   animation:hsdrift 52s ease-in-out infinite,hshue 96s linear infinite}
@@ -228,7 +228,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
   background:linear-gradient(120deg,#31174F,#17285E,#0F4350,#3D1B49,#31174F);background-size:320% 320%} }
 :root[data-theme=dark] .hssky{opacity:.9;
   background:linear-gradient(120deg,#31174F,#17285E,#0F4350,#3D1B49,#31174F);background-size:320% 320%}
-.hsspark{position:absolute;pointer-events:none;width:15px;height:15px;margin:-7px 0 0 -7px;
+.hsspark{position:absolute;z-index:3;pointer-events:none;width:15px;height:15px;margin:-7px 0 0 -7px;
   opacity:0;will-change:transform,opacity;filter:drop-shadow(0 0 4px rgba(255,255,255,.9));
   clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%);
   animation:hstwinkle 4.2s ease-in-out infinite}
@@ -236,7 +236,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
   0%,100%{opacity:0;transform:translateY(0) scale(.3) rotate(0deg)}
   45%{opacity:.95;transform:translateY(-14px) scale(1) rotate(70deg)}
   70%{opacity:.3;transform:translateY(-26px) scale(.7) rotate(120deg)}}
-.hsburst{position:absolute;pointer-events:none;width:17px;height:17px;margin:-8px 0 0 -8px;
+.hsburst{position:absolute;z-index:3;pointer-events:none;width:17px;height:17px;margin:-8px 0 0 -8px;
   will-change:transform,opacity;filter:drop-shadow(0 0 5px rgba(255,255,255,.95));
   clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%);
   animation:hspop .95s cubic-bezier(.16,.8,.3,1) forwards}
@@ -255,14 +255,14 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
 .hshint{text-align:center;color:var(--muted);font-size:16px;margin:2px 0 12px}
 .hsfield{position:relative;height:min(56vh,440px);border-radius:22px;overflow:hidden;
   background:var(--panel);border:2px solid var(--line);touch-action:manipulation;user-select:none}
-.hsblob{position:absolute;border-radius:50%;pointer-events:none;
+.hsblob{position:absolute;z-index:2;border-radius:50%;pointer-events:none;
   background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.95),rgba(255,255,255,.5));
   box-shadow:inset 0 -8px 18px rgba(150,120,190,.14)}
 @media (prefers-color-scheme:dark){ :root:not([data-theme=light]) .hsblob{
   background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.13),rgba(255,255,255,.05));box-shadow:none} }
 :root[data-theme=dark] .hsblob{
   background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.13),rgba(255,255,255,.05));box-shadow:none}
-.hsmon{position:absolute;width:104px;height:104px;margin:-52px 0 0 -52px;border:0;padding:0;
+.hsmon{position:absolute;z-index:1;width:104px;height:104px;margin:-52px 0 0 -52px;border:0;padding:0;
   background:none;cursor:pointer;touch-action:manipulation;
   transition:transform .42s cubic-bezier(.22,.9,.3,1),opacity .3s}
 .hsmon svg{width:100%;height:100%;display:block;filter:drop-shadow(0 4px 10px rgba(0,0,0,.22))}
@@ -611,7 +611,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build 506c9c4d &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build 51230595 &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -4903,8 +4903,8 @@ function hsPlace(el){
     const fr = f.getBoundingClientRect();
     const r = blobs[Math.floor(Math.random() * blobs.length)].getBoundingClientRect();
     const a = Math.random() * Math.PI * 2;
-    const x = (r.left - fr.left + r.width/2  + Math.cos(a) * r.width  * .54) / fr.width  * 100;
-    const y = (r.top  - fr.top  + r.height/2 + Math.sin(a) * r.height * .54) / fr.height * 100;
+    const x = (r.left - fr.left + r.width/2  + Math.cos(a) * r.width  * .34) / fr.width  * 100;
+    const y = (r.top  - fr.top  + r.height/2 + Math.sin(a) * r.height * .34) / fr.height * 100;
     el.style.left = clamp(x, 12, 88) + '%';
     el.style.top  = clamp(y, 14, 84) + '%';
     return;
