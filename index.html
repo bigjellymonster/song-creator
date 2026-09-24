@@ -246,6 +246,44 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
   .hsslot .inst{width:23px;height:23px} .hsband{gap:6px} }
 @media (prefers-reduced-motion:reduce){ .hsslot.full svg.mon,.hsslot.full{animation:none} }
 
+/* ---- play-along pads --------------------------------------------------
+   Phone portrait first: two columns of big square pads, thumb-sized, so the
+   whole scale is reachable without scrolling. Every pad is a note of the key,
+   so nothing she presses can be wrong -- which is exactly why there is no red
+   light anywhere in here. */
+.padgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:440px;margin:0 auto}
+.padkey{position:relative;aspect-ratio:1/.82;border:0;padding:0;border-radius:22px;cursor:pointer;
+  background:var(--pc);box-shadow:0 5px 0 var(--pcd),0 8px 16px rgba(0,0,0,.16);
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+  transition:transform .09s,box-shadow .09s}
+/* No sticker rim on the pads. It exists to keep a monster legible against an
+   unknown background; on a solid saturated pad it just reads as a white box. */
+.padkey .mrim{display:none}
+/* An app-wide svg rule paints a white background, which sat over the pad colour
+   as a white box -- not the sticker rim, which is what I blamed first. */
+.padkey svg.mon{background:none;width:84%;height:84%;display:block;animation:hsplay 2.9s ease-in-out infinite;
+  filter:drop-shadow(0 3px 5px rgba(0,0,0,.28))}
+.padkey:active,.padkey.hit{transform:translateY(5px);box-shadow:0 0 0 var(--pcd),0 3px 8px rgba(0,0,0,.2)}
+/* a pad that fits the chord playing right now: it breathes and wears a halo */
+.padkey.fits{box-shadow:0 5px 0 var(--pcd),0 0 0 4px #fff,0 0 22px 6px var(--pc)}
+.padkey.fits svg.mon{animation:padfit 1.25s ease-in-out infinite}
+@keyframes padfit{0%,100%{transform:scale(1) rotate(-3deg)}50%{transform:scale(1.12) rotate(3deg)}}
+/* the one to press in follow-along: unmissable, and it waits */
+.padkey.call{animation:padcall .62s ease-in-out infinite}
+.padkey.call::after{content:'';position:absolute;inset:0;border-radius:22px;
+  border:6px solid #fff;opacity:.95}
+@keyframes padcall{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
+.padkey.oct{background:linear-gradient(135deg,#FF9ED2,#9BB5FF,#7FE7C4,#FFD98A);
+  background-size:300% 100%;animation:hsdrift 9s linear infinite}
+.padoctlab{font:800 22px/1 system-ui,sans-serif;color:#2E2A38}
+.padspark{position:absolute;z-index:3;pointer-events:none;width:15px;height:15px;margin:-7px 0 0 -7px;
+  filter:drop-shadow(0 0 5px rgba(255,255,255,.95));
+  clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%);
+  animation:hspop .8s cubic-bezier(.16,.8,.3,1) forwards}
+@media (min-width:560px){ .padgrid{max-width:500px} }
+@media (prefers-reduced-motion:reduce){ .padkey svg.mon,.padkey.call,.padkey.oct{animation:none} }
+
 /* ---- unicorn princess sparkles ----------------------------------------
    Everything here animates transform, opacity and filter only. Those are
    composited off the main thread, which matters because this screen is the one
@@ -417,6 +455,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     <button class="tab" id="tabAdv" role="tab" aria-selected="false">Advanced</button>
     <button class="tab" id="tabKids" role="tab" aria-selected="false">Monsters</button>
     <button class="tab" id="tabHS" role="tab" aria-selected="false">Hide &amp; seek</button>
+    <button class="tab" id="tabPad" role="tab" aria-selected="false">Play along</button>
     <button class="tab" id="tabPrac" role="tab" aria-selected="false">Practice</button>
   </div>
 
@@ -472,6 +511,17 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     <div class="mrow">
       <button class="mbig" id="hsGo">Start</button>
       <button class="mbig ghost" id="hsStop">Stop</button>
+    </div>
+  </div>
+
+  <div id="padPanel" hidden>
+    <p class="hshint" id="padHint">Press a monster to play a note. They are all the right notes.</p>
+    <div class="padgrid" id="padGrid"></div>
+    <p class="hssay" id="padSay"></p>
+    <div class="mrow">
+      <button class="mbig" id="padGo">Start</button>
+      <button class="mbig ghost" id="padMode">Follow along</button>
+      <button class="mbig ghost" id="padStop">Stop</button>
     </div>
   </div>
 
@@ -651,7 +701,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build 7c32551d &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build 6c2a6ac4 &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -4909,7 +4959,10 @@ function initEndless(){
 // Set the scheduler checks at emit time, so deleting from it mid-playback is
 // all it takes for an instrument to walk in.
 // ---------------------------------------------------------------------------
-const HS_ORDER = ['bass', 'drums', 'pad', 'arp', 'lead'];
+// Drums first: measured, it is the biggest single jump (+3.5 dB) and it is the
+// one a small child hears arrive. Bass second, then the quieter textures, then
+// the tune last so the round ends with the melody walking in.
+const HS_ORDER = ['drums', 'bass', 'pad', 'arp', 'lead'];
 const HS_GENRES = [['kids','uplifting'], ['chiptune','uplifting'], ['funk','uplifting'],
                    ['folk','uplifting'], ['retro','driving'], ['vapor','dreamy']];
 let hsOn = false, hsQueue = [], hsCaught = 0, hsEl = null, hsMove = null, hsDuck = null, hsPing = null;
@@ -4933,6 +4986,16 @@ const HS_TINTS = [
   { name:'Rainbow', accent:'#A3106B', body:'#FFA5DB', rainbow:true }
 ];
 const hsTint = () => HS_TINTS[hsRoundNo % HS_TINTS.length];
+// Un-muting a track barely moves the meter: the glue compressor gives back
+// whatever the new instrument adds. So the round rides the master up as the
+// band fills out -- eight decibels from the bare chords to everyone playing,
+// which is the swell the compressor was cancelling.
+const HS_SWELL = 8;
+function hsLevel(){
+  if (!rig || !rig.vol) return;
+  const n = hsSlots.length || 1, got = hsSlots.filter(s => s.mon).length;
+  try { rig.vol.volume.rampTo(ui.vol - HS_SWELL * (1 - got / n), .55); } catch(e){}
+}
 // Paint one monster in the current round's colours. Natural rounds just use the
 // monster's own accent and leave the body alone.
 function hsPaint(el, mon, t){
@@ -5064,7 +5127,7 @@ function hsSat(){
   f.style.setProperty('--hssat', (.34 + 1.02 * (got / n)).toFixed(2));
 }
 function hsSay(t){ const n = $('#hsSay'); if (n) n.textContent = t || ''; }
-function hsProgress(){ hsBand(); hsSat(); }
+function hsProgress(){ hsBand(); hsSat(); hsLevel(); }
 // A short bell that climbs as the round fills up, so the reward is not the same
 // sound five times. Its own synth, because the rig is busy playing the song.
 function hsBeep(step){
@@ -5073,7 +5136,7 @@ function hsBeep(step){
       hsPing = new Tone.PolySynth(Tone.FMSynth, { harmonicity:3, modulationIndex:1.4,
         envelope:{ attack:.002, decay:.5, sustain:0, release:.5 },
         modulationEnvelope:{ attack:.002, decay:.2, sustain:0, release:.2 } }).toDestination();
-      hsPing.volume.value = -10;
+      hsPing.volume.value = -19;
     }
     hsPing.triggerAttackRelease(['C6','E6','G6','B6','D7','G7'][Math.min(step, 5)], .45);
   } catch(e){}
@@ -5191,10 +5254,13 @@ function hsCatch(b){
     hsProgress();
   });
   if (hsQueue.length){
-    hsSay(quick ? 'So fast!' : ['Got it!', 'Found you!', 'Nice one!', 'Caught!'][hsCaught % 4]);
+    // Naming what just joined ties the tap to the change in the music, the same
+    // way naming the colour ties it to the picture.
+    const got = (HS_INST[tr] || {}).name;
+    hsSay(got ? got + '!' : (quick ? 'So fast!' : ['Got it!', 'Found you!', 'Nice one!'][hsCaught % 3]));
     setTimeout(() => { if (hsOn) hsSpawn(); }, 820);
   } else {
-    hsSay('Your whole band is here!');
+    hsSay(((HS_INST[tr] || {}).name || 'All') + '! Your whole band is here!');
     setTimeout(() => { if (hsOn) hsBow(); }, 900);
     setTimeout(() => { if (hsOn) hsRound(true); }, 4600);
   }
@@ -5219,8 +5285,12 @@ function hsBow(){
 // A round: a song where every layer actually sounds, so each catch is audible.
 // Re-rolling the seed keeps each genre's own character, which forcing the
 // parts on would have flattened.
-function hsRound(keepPlaying){
-  if (keepPlaying) hsRoundNo++;     // a finished round earns the next colour
+// Build the song for a round. Only ever called when nothing is playing: swapping
+// the global song underneath a live scheduler is what was killing the music --
+// the pump holds it by reference, so it carried on playing the new song's notes
+// at the old song's times and fell silent. Once a round is under way the song
+// keeps going, and endless hands over to the next one at its own seam.
+function hsNewSong(){
   const [g, mood] = HS_GENRES[Math.floor(Math.random() * HS_GENRES.length)];
   ui.genre = g; ui.mood = mood; ui.style = null; ui.ref = null; ui.plan = null;
   let best = null;
@@ -5233,12 +5303,33 @@ function hsRound(keepPlaying){
   }
   newSong({ genre:g, mood, key:'', length:'normal', chords:[], seed:best.seed, style:null, ref:null });
   if (song.p.lead !== 'none') song.p.leadVerse = true;
-  hsQueue = HS_ORDER.filter(t => best.have.includes(t));
+  // The arrangement drops tracks in and out by section. With everything else
+  // muted for the game, a section that drops the chords leaves pure silence --
+  // the other half of "the song just stops". Chords stay in, always.
+  let touched = false;
+  song.sections.forEach(s => {
+    if (s.drop.includes('chords')){ s.drop = s.drop.filter(t => t !== 'chords'); touched = true; }
+    if (s.dropB.includes('chords')){ s.dropB = s.dropB.filter(t => t !== 'chords'); touched = true; }
+  });
+  if (touched) arrange();
+  return best.have;
+}
+
+function hsRound(keepPlaying){
+  if (keepPlaying) hsRoundNo++;     // a finished round earns the next colour
+  // Mid-game the song carries on untouched; only a fresh start builds one.
+  const have = (keepPlaying && playing) ? HS_ORDER.filter(t => t === 'bass' || (song.p[t] && song.p[t] !== 'none'))
+                                        : hsNewSong();
+  hsQueue = HS_ORDER.filter(t => have.includes(t));
   hsSlots = hsQueue.map(t => ({ tr:t, mon:null }));
   hsCaught = 0;
   hsBlobs(5);
   ui.solo = null;
-  ui.mutes = new Set(hsQueue);          // chords carry the song until the rest arrive
+  // Same Set the scheduler reads, emptied back out: the band drops to the chords
+  // and she builds it up again. Mutating it rather than replacing it means an
+  // endless hand-over mid-round keeps the game state.
+  ui.mutes.clear();
+  hsQueue.forEach(t => ui.mutes.add(t));
   hsProgress();
   // The colour is how she knows she has moved on -- a round number would mean
   // nothing at three, but naming the colour turns it into a colour game too.
@@ -5247,7 +5338,7 @@ function hsRound(keepPlaying){
   if (!keepPlaying){
     ui.endless = true;
     document.querySelectorAll('#sEndless,#aEndless,#mEndless').forEach(c => c.checked = true);
-    play(0);
+    play(0).then(hsLevel);
   }
   $('#hsField').querySelectorAll('.hsmon').forEach(n => n.remove());
   hsSparkle(18);
@@ -5257,6 +5348,7 @@ function hsRound(keepPlaying){
 function hsStart(){
   hsOn = true;
   hsRoundNo = 0;
+  ui.mutes = new Set();   // one Set for the whole game; hsRound only ever refills it
   const f = $('#hsField');
   if (f && !f.querySelector('.hssky')){
     const sky = document.createElement('div'); sky.className = 'hssky';
@@ -5335,6 +5427,174 @@ function initHideSeek(){
   hsProgress();
 }
 
+// ---------------------------------------------------------------------------
+// Play along. Seven pads, one per note of the key, so every pad is always a
+// right note -- which is why there is no red light in here. The feedback that
+// IS available is which notes fit the chord playing right now, and that moves
+// with the song. Nothing is ever marked wrong; the ones that fit just glow.
+// ---------------------------------------------------------------------------
+const PAD_COL = [                            // rainbow, low to high
+  ['#E8455C','#A81F33'], ['#EE7B23','#B4520C'], ['#E8B613','#AD8103'],
+  ['#3FAE55','#237336'], ['#2E8BDB','#12568F'], ['#7B4FD4','#4E2795'], ['#C94AAE','#8E2277']
+];
+let padOn = false, padFollow = false, padOct = 0, padSynth = null;
+let padMelody = [], padAt = 0, padGlowTimer = null;
+
+// Its own voice: the rig is busy playing the band, and a bell sits over a mix
+// without fighting anything in it.
+function padVoice(){
+  if (padSynth) return padSynth;
+  padSynth = new Tone.PolySynth(Tone.FMSynth, { harmonicity:3.01, modulationIndex:1.8,
+    envelope:{ attack:.004, decay:1.6, sustain:.04, release:1.4 },
+    modulationEnvelope:{ attack:.002, decay:.35, sustain:0, release:.4 } }).toDestination();
+  padSynth.volume.value = -8;
+  return padSynth;
+}
+const padMidi = deg => 60 + (song ? song.root : 0) + scalePc(deg) + padOct * 12;
+// A pad's pitch class, for asking whether it is in the chord underneath.
+const padPc = deg => ((((song ? song.root : 0) + scalePc(deg)) % 12) + 12) % 12;
+
+function padBurst(el, n){
+  const r = el.getBoundingClientRect(), host = $('#padGrid');
+  const hr = host.getBoundingClientRect();
+  for (let i = 0; i < n; i++){
+    const s = document.createElement('i');
+    s.className = 'padspark';
+    s.style.left = (r.left - hr.left + r.width/2) + 'px';
+    s.style.top  = (r.top  - hr.top  + r.height/2) + 'px';
+    s.style.background = HS_TINT[Math.floor(Math.random() * HS_TINT.length)];
+    const a = (i / n) * Math.PI * 2 + Math.random() * .5, d = 34 + Math.random() * 46;
+    s.style.setProperty('--dx', Math.cos(a) * d + 'px');
+    s.style.setProperty('--dy', Math.sin(a) * d + 'px');
+    host.appendChild(s);
+    setTimeout(() => s.remove(), 1000);
+  }
+}
+
+function padHit(deg, el){
+  if (!padOn) return;
+  try { padVoice().triggerAttackRelease(Tone.Frequency(padMidi(deg), 'midi'), 1.1, undefined, .85); } catch(e){}
+  el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit');
+  setTimeout(() => el.classList.remove('hit'), 140);
+  padBurst(el, el.classList.contains('fits') || el.classList.contains('call') ? 16 : 8);
+  if (padFollow && padMelody.length){
+    if (padMelody[padAt] === deg){
+      padAt = (padAt + 1) % padMelody.length;
+      padSay(padAt === 0 ? 'You played the whole tune!' : '');
+      padCall();
+    }
+    // a wrong pad costs nothing: the light simply stays where it is
+  }
+}
+
+function padRender(){
+  const box = $('#padGrid'); if (!box) return;
+  box.innerHTML = '';
+  for (let d = 0; d < 7; d++){
+    const m = MONSTERS[d % MONSTERS.length], c = PAD_COL[d];
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'padkey';
+    b.style.setProperty('--pc', c[0]); b.style.setProperty('--pcd', c[1]);
+    b.dataset.deg = d;
+    b.setAttribute('aria-label', 'Note ' + (d + 1));
+    const art = m.art(m.c[0]);
+    b.innerHTML = `<svg class="mon" viewBox="-6 -6 112 112" aria-hidden="true"><g class="mrim">${art}</g>${art}</svg>`;
+    b.onpointerdown = () => padHit(d, b);
+    box.appendChild(b);
+  }
+  const o = document.createElement('button');
+  o.type = 'button'; o.className = 'padkey oct';
+  o.setAttribute('aria-label', 'Higher or lower');
+  o.innerHTML = '<span class="padoctlab">' + (padOct > 0 ? '\u25bc LOW' : '\u25b2 HIGH') + '</span>';
+  o.onpointerdown = () => {
+    padOct = padOct ? 0 : 1;
+    o.querySelector('.padoctlab').textContent = padOct > 0 ? '\u25bc LOW' : '\u25b2 HIGH';
+    padBurst(o, 12);
+  };
+  $('#padGrid').appendChild(o);
+}
+const padSay = t => { const n = $('#padSay'); if (n) n.textContent = t || ''; };
+
+// Which pads fit the chord under the playhead. This is the whole lesson, and it
+// is the one piece of feedback that actually changes as the song moves.
+function padGlow(){
+  if (!padOn || !song) return;
+  let beat = 0;
+  if (playing) beat = playFrom + Math.max(0, Tone.now() - playOrigin) * song.tempo / 60;
+  const at = chordAtBeat(beat % Math.max(1, song.totalBeats));
+  const set = new Set();
+  if (at && at.ch) for (const iv of at.ch.iv) set.add(((at.ch.r + iv) % 12 + 12) % 12);
+  $('#padGrid').querySelectorAll('.padkey[data-deg]').forEach(b => {
+    b.classList.toggle('fits', set.has(padPc(+b.dataset.deg)));
+  });
+}
+
+// The melody is the song's own lead line, reduced to scale degrees. Notes that
+// fall outside the scale are dropped rather than approximated -- there is no pad
+// for them, and inventing one would teach the wrong thing.
+function padBuildMelody(){
+  padMelody = []; padAt = 0;
+  if (!song) return;
+  const sc = MODES[song.mode];
+  for (const e of song.events){
+    if (e.tr !== 'lead' || !e.n || !e.n.length) continue;
+    const pc = (((e.n[0] - song.root) % 12) + 12) % 12;
+    const d = sc.indexOf(pc);
+    if (d >= 0 && (!padMelody.length || padMelody[padMelody.length-1] !== d)) padMelody.push(d);
+    if (padMelody.length >= 64) break;
+  }
+}
+function padCall(){
+  const box = $('#padGrid'); if (!box) return;
+  box.querySelectorAll('.call').forEach(b => b.classList.remove('call'));
+  if (!padFollow || !padMelody.length) return;
+  const b = box.querySelector(`.padkey[data-deg="${padMelody[padAt]}"]`);
+  if (b) b.classList.add('call');
+}
+
+async function padStart(){
+  padOn = true;
+  padRender();
+  $('#padGo').textContent = 'New song';
+  if (!song) build();
+  // The band plays underneath with the tune and the chords taken out, so there
+  // is a space shaped like her.
+  ui.solo = null;
+  ui.mutes = new Set(['lead', 'arp', 'chords']);
+  ui.endless = true;
+  document.querySelectorAll('#sEndless,#aEndless,#mEndless').forEach(c => c.checked = true);
+  await play(0);
+  padBuildMelody();
+  padCall();
+  clearInterval(padGlowTimer);
+  padGlowTimer = setInterval(padGlow, 220);
+  padSay(padFollow ? 'Press the monster that lights up' : '');
+}
+function padStop(){
+  padOn = false;
+  clearInterval(padGlowTimer); padGlowTimer = null;
+  ui.mutes = new Set();
+  stop();
+  $('#padGo').textContent = 'Start';
+  padSay('');
+  $('#padGrid').querySelectorAll('.call,.fits').forEach(b => b.classList.remove('call','fits'));
+}
+function initPads(){
+  if (!$('#padGrid')) return;
+  padRender();
+  $('#padGo').onclick = () => { if (padOn){ padBuildMelody(); padCall(); } else padStart(); };
+  $('#padStop').onclick = () => padStop();
+  $('#padMode').onclick = () => {
+    padFollow = !padFollow;
+    $('#padMode').textContent = padFollow ? 'Free play' : 'Follow along';
+    $('#padHint').textContent = padFollow
+      ? 'Press the monster that lights up. It waits for you.'
+      : 'Press a monster to play a note. They are all the right notes.';
+    padCall();
+    padSay(padFollow ? 'Press the monster that lights up' : '');
+  };
+}
+
 function initMonsters(){
   renderMonsters();
   const go = $('#mNameGo'), inp = $('#mNameIn');
@@ -5378,7 +5638,7 @@ function syncAdvancedChips(){
 
 function initSimple(){
   renderStyles();
-  const tabs = [['#tabSimple', '#simplePanel'], ['#tabKids', '#kidsPanel'], ['#tabHS', '#hsPanel'], ['#tabAdv', '#advPanel'], ['#tabPrac', '#pracPanel']];
+  const tabs = [['#tabSimple', '#simplePanel'], ['#tabKids', '#kidsPanel'], ['#tabHS', '#hsPanel'], ['#tabPad', '#padPanel'], ['#tabAdv', '#advPanel'], ['#tabPrac', '#pracPanel']];
   for (const [tb, pn] of tabs){
     $(tb).onclick = () => {
       for (const [t2, p2] of tabs){
@@ -5389,6 +5649,7 @@ function initSimple(){
       }
       if (tb === '#tabKids') renderMonsters();
       if (tb !== '#tabHS' && hsOn) hsStop();
+      if (tb !== '#tabPad' && padOn) padStop();
       if (tb === '#tabAdv') syncAdvancedChips();
       if (tb === '#tabPrac'){ syncPractice(); renderMutes(); }
     };
@@ -5426,6 +5687,7 @@ wireSeek();
 initSimple();
 initMonsters();
 initHideSeek();
+initPads();
 initEndless();
 
 </script>
