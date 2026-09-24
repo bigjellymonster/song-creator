@@ -211,6 +211,22 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
 .magic .mhint{flex-basis:100%;font-size:13px;opacity:.7;margin:0}
 /* A finger is not a mouse: on any touch screen everything gets bigger. */
 
+/* ---- hide and seek ---- */
+.hshint{text-align:center;color:var(--muted);font-size:16px;margin:2px 0 12px}
+.hsfield{position:relative;height:min(56vh,440px);border-radius:22px;overflow:hidden;
+  background:var(--panel);border:2px solid var(--line);touch-action:manipulation;user-select:none}
+.hsblob{position:absolute;border-radius:50%;background:var(--panel2);opacity:.9;pointer-events:none}
+.hsmon{position:absolute;width:104px;height:104px;margin:-52px 0 0 -52px;border:0;padding:0;
+  background:none;cursor:pointer;touch-action:manipulation;
+  transition:transform .42s cubic-bezier(.22,.9,.3,1),opacity .3s}
+.hsmon svg{width:100%;height:100%;display:block;filter:drop-shadow(0 4px 10px rgba(0,0,0,.22))}
+.hsmon.duck{transform:scale(.34) translateY(26px);opacity:.55}
+.hsmon.got{transform:scale(1.5);opacity:0;pointer-events:none}
+.hsbar{height:12px;border-radius:6px;background:var(--line);margin:14px 0 8px;overflow:hidden}
+.hsbar i{display:block;height:100%;width:0;border-radius:6px;background:var(--accent);
+  transition:width .45s cubic-bezier(.22,.9,.3,1)}
+.hssay{text-align:center;font-size:20px;font-weight:700;color:var(--ink);margin:4px 0 12px;min-height:26px}
+@media (max-width:520px){ .hsmon{width:88px;height:88px;margin:-44px 0 0 -44px} }
 /* ---- monsters (the child's screen) ---- */
 /* Everything here is oversized on purpose: a three-year-old aims with a whole
    hand, not a fingertip, and gets no feedback from a hover state. Each tile is
@@ -309,6 +325,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     <button class="tab on" id="tabSimple" role="tab" aria-selected="true">Make a song</button>
     <button class="tab" id="tabAdv" role="tab" aria-selected="false">Advanced</button>
     <button class="tab" id="tabKids" role="tab" aria-selected="false">Monsters</button>
+    <button class="tab" id="tabHS" role="tab" aria-selected="false">Hide &amp; seek</button>
     <button class="tab" id="tabPrac" role="tab" aria-selected="false">Practice</button>
   </div>
 
@@ -353,6 +370,23 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
       <button class="mbig ghost" id="mStop">Stop</button>
     </div>
     <label class="endless mendless"><input type="checkbox" id="mEndless"> <span>Keep the music going</span></label>
+  </div>
+
+  <div id="hsPanel" hidden>
+    <p class="hshint">Find the monster and tap it. Every one you catch adds something to the song.</p>
+    <div class="hsfield" id="hsField">
+      <div class="hsblob" style="left:8%;top:14%;width:132px;height:112px"></div>
+      <div class="hsblob" style="left:62%;top:8%;width:156px;height:126px"></div>
+      <div class="hsblob" style="left:14%;top:58%;width:168px;height:132px"></div>
+      <div class="hsblob" style="left:58%;top:62%;width:140px;height:118px"></div>
+      <div class="hsblob" style="left:37%;top:34%;width:120px;height:104px"></div>
+    </div>
+    <div class="hsbar" id="hsBar" aria-hidden="true"></div>
+    <p class="hssay" id="hsSay">Tap Start to play</p>
+    <div class="mrow">
+      <button class="mbig" id="hsGo">Start</button>
+      <button class="mbig ghost" id="hsStop">Stop</button>
+    </div>
   </div>
 
   <div class="grid" id="advPanel" hidden>
@@ -458,6 +492,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
             <button class="primary" id="play">Play</button>
             <button id="stop" disabled>Stop</button>
           </div>
+          <label class="endless"><input type="checkbox" id="aEndless"> <span>Keep playing &mdash; build a new song each time this one ends</span></label>
           <div class="sliders">
             <div><label class="lab" for="tempo">Tempo <span class="val" id="tempoV"></span></label><input type="range" id="tempo" min="50" max="180" step="1"></div>
             <div><label class="lab" for="vol">Level <span class="val" id="volV"></span></label><input type="range" id="vol" min="-24" max="0" step="1" value="-6"></div>
@@ -530,7 +565,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build dc0ced7b &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build 1e78edc4 &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -588,11 +623,20 @@ const PRESETS = {
   // is set to keep it from ever startling anyone -- one chord per four bars, no
   // drums, arc off so the arrangement stops dropping tracks in and out.
   relax:{ name:'Relaxing', makeup:8.2, p:{ tempo:54, defMode:'major', keys:[2,4,7,9,0,5], chordColor:'add9', chordBars:4,
-    comp:'softpad', compPattern:'sustain', compFeel:'hold', pad:'strings', padWhen:'always',
+    comp:'softpad', compPattern:'sustain', compFeel:'hold', pad:'realstrings', padWhen:'always',
     bass:'sine', bassPattern:'pedal', lead:'vibes', leadVerse:true, leadBridge:true,
-    leadDensity:.12, leadGrid:1, arp:'sparse', arpSound:'vibes',
+    leadDensity:.1, leadGrid:1, arp:'none', arpSound:'vibes',
     drums:'none', brightness:.3, space:.95, pump:0, width:.7, drive:0, arc:false,
     progFeel:'modal', soloScale:'mode', nature:'rain' } },
+  // Functional harmony and no drum kit: the accompaniment is a broken chord
+  // under the tune, which is what arp8 on a piano already is. Cadences come from
+  // the 'default' pools, where the V-I arrivals live.
+  classical:{ name:'Classical', makeup:6.4, p:{ tempo:96, defMode:'major', keys:[0,7,5,2,9,4], chordColor:'triad', chordBars:1,
+    comp:'grand', compPattern:'arp8', compFeel:'push', pad:'realstrings', padWhen:'chorus',
+    bass:'upright', bassPattern:'arp', lead:'realflute', leadVerse:true, leadBridge:true,
+    leadDensity:.5, leadGrid:.5, arp:'none', arpSound:'piano',
+    drums:'none', swing:0, brightness:.55, space:.62, pump:0, width:.5, drive:0,
+    progFeel:'default', soloScale:'mode' } },
   retro:{ name:'Retrowave', makeup:5.5, p:{ tempo:96, keys:[9,4,2,0,7], comp:'pad', compPattern:'sustain', bass:'saw', bassPattern:'octave8',
     lead:'saw', leadDensity:.6, arp:'16', arpSound:'square', drums:'backbeat', hats:8, hatLift:true, snare:'gated', brightness:.55, space:.45,
     pump:.5, width:.7, drive:.18 } },
@@ -647,14 +691,18 @@ const VARY = {
     bassPattern:['long','arp','pedal'], lead:['piano','vibes','sax','realflute','grand'], arp:['sparse','8'], arpSound:['piano','vibes'],
     brightness:[.35,.58], space:[.7,.95], drumVar:[0,3], arpFigure:['up','updown','wander'],
     voicing:['low','mid','high'] },
-  relax:{ tempo:[48,62], chordBars:[4,4,8], progFeel:['modal','modal','default','bittersweet'],
+  relax:{ tempo:[48,62], chordBars:[4,8,8,8], progFeel:['modal','modal','default','bittersweet'],
     mode:['major','major','minor'], chordColor:['add9','9','add9'],
-    comp:['softpad','softpad','glass','stringbox','pad'], compPattern:['sustain'], compFeel:['hold','swell'],
-    pad:['strings','choir','synthpad','realstrings','stringbox'], padWhen:['always'], voicing:['low','mid'],
+    // Sustained wide detuned saws under a long reverb read as a church organ --
+    // the same thing that was happening in rock. softpad is a triangle with a
+    // 2.2s attack, which is the actual long pad, so it carries this genre and
+    // stringbox is gone from both pools.
+    comp:['softpad','softpad','softpad','glass','pad'], compPattern:['sustain'], compFeel:['hold','hold','swell'],
+    pad:['realstrings','realstrings','strings','choir','realstrings'], padWhen:['always'], voicing:['low','mid'],
     bass:['sine','sine','round'], bassPattern:['pedal','long'],
-    lead:['vibes','piano','glass','realflute','grand'], leadDensity:[.08,.2],
-    arp:['sparse','none','sparse'], arpSound:['vibes','piano'], arpFigure:['wander','up'],
-    nature:['rain','wind','night','stream','none'], natureLevel:[.3,.62],
+    lead:['vibes','piano','glass','realflute','grand'], leadDensity:[.05,.16],
+    arp:['none','none','sparse'], arpSound:['vibes','piano'], arpFigure:['wander','up'],
+    nature:['rain','wind','night','stream','none'], natureLevel:[.26,.56],
     drums:['none'], brightness:[.24,.4], space:[.85,.98] },
   retro:{ clap:[false,true,true], kit:['punch','r8','room'], progFeel:['bittersweet','bittersweet','dark','default','modal','modal'], drive:[.12,.4], compFeel:['hold','push','pulse','swell'], tempo:[84,104], comp:['pad','polysynth','cleangtr','pwm','stringbox','vox','jazzgtr'],
     pad:['none','synthpad','strings','stringbox','glass','realstrings'], padWhen:['chorus','always'], voicing:['low','mid','high'],
@@ -3260,7 +3308,7 @@ function makeRig(){
   const beds = [];
   if (p.nature && p.nature !== 'none'){
     const lvl = clamp(p.natureLevel === undefined ? .5 : p.natureLevel, 0, 1);
-    const out = fx(new Tone.Gain(Tone.dbToGain(-30 + 15 * lvl)));
+    const out = fx(new Tone.Gain(Tone.dbToGain(-35 + 15 * lvl)));
     out.connect(bus);
     const noise = (type, db) => { const n = fx(new Tone.Noise(type)); n.volume.value = db; beds.push(n); return n; };
     const lfo = (rate, lo, hi, param, type) => {
@@ -3516,7 +3564,10 @@ function scheduleSong(r, origin, fromBeat, opts){
 // of it first. startStreamEx hands back the scheduler itself for that; plain
 // startStream keeps the old shape for every other caller.
 function startStreamEx(r, origin, fromBeat, opts){
-  const s = makeScheduler(r, origin, fromBeat, opts), LOOK = 3;
+  // How far ahead notes are scheduled. Three seconds is the safe default, but it
+  // also sets how long a change to the live mutes Set takes to be heard -- so
+  // hide and seek asks for a shorter one, to keep tap and result connected.
+  const s = makeScheduler(r, origin, fromBeat, opts), LOOK = opts.look || 3;
   s.start();
   let id = null;
   if (!s.upTo(origin + LOOK)) id = setInterval(() => { if (s.upTo(Tone.now() + LOOK)) clearInterval(id); }, 500);
@@ -3732,9 +3783,10 @@ function detectChords(frames, bassFrames, cFps, env, fps, tempo, startOffset){
 // ================= UI =================
 const $ = s => document.querySelector(s);
 const ui = { genre:'retro', mood:'wistful', vol:-6, style:null, ref:null, plan:null, sel:-1,
-  mutes:new Set(), solo:null, loop:false, endless:false, countIn:false, click:false, transpose:0, speed:1 };
+  mutes:new Set(), solo:null, loop:false, endless:false, countIn:false, click:false, transpose:0, speed:1, look:0 };
 const playOpts = () => ({ mutes: ui.solo ? new Set(TRACKS.filter(t => t !== ui.solo)) : ui.mutes,
-  transpose: ui.transpose, click: ui.click, countIn: ui.countIn ? 4 : 0 });
+  transpose: ui.transpose, click: ui.click, countIn: ui.countIn ? 4 : 0,
+  look: ui.look || 0 });
 let rig = null, playing = false, playOrigin = 0, playFrom = 0, stopTimer = null, pumpTimer = null, lastShown = -1, loopRange = null;
 const DEFAULT_CHORD_HINT = 'Several chords become the verse and chorus. One chord just sets the key. Leave empty to let it choose.';
 
@@ -4374,6 +4426,7 @@ const SIMPLE_STYLES = [
   { id:'playtime', label:'Playtime',sub:'bouncy and silly',   genre:'kids',    mood:'uplifting', c:'#5fb8a6' },
   { id:'floaty',   label:'Floaty',  sub:'slow lush 80s',      genre:'vapor',   mood:'dreamy',    c:'#c98bd6' },
   { id:'game',     label:'Game',    sub:'8-bit bleeps',       genre:'chiptune',mood:'uplifting', c:'#5eb36a' },
+  { id:'classical',label:'Classical',sub:'piano and strings', genre:'classical',mood:'uplifting', c:'#a8748f' },
   { id:'relaxing', label:'Relaxing',sub:'sleep and calm',     genre:'relax',   mood:'dreamy',    c:'#6f9fb5' }
 ];
 let simpleStyle = null;
@@ -4482,8 +4535,28 @@ const STYLE_ICON = {
   country: '<path d="M12 2.8c4.8 0 7.7 2.6 7.7 5.9 0 4-4.3 12.5-7.7 12.5S4.3 12.7 4.3 8.7C4.3 5.4 7.2 2.8 12 2.8Z"/>'
            + '<path d="M9.3 4.6 7.6 16.2M12 4.1v13.4M14.7 4.6l1.7 11.6" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.1" stroke-linecap="round"/>',
   floaty:  '<path d="M7.2 17.5a4.2 4.2 0 0 1-.7-8.3 5 5 0 0 1 9.4-1.7 4 4 0 0 1 1.3 7.8Z"/><rect x="5" y="18.4" width="14" height="2.6" rx="1.3" opacity=".8"/>',
-  game:    '<rect x="3.2" y="7.4" width="17.6" height="10.4" rx="3.4"/><rect x="5.6" y="11.3" width="4.2" height="1.5" rx=".4" fill="#fff" fill-opacity=".85"/><rect x="6.95" y="9.95" width="1.5" height="4.2" rx=".4" fill="#fff" fill-opacity=".85"/><circle cx="16" cy="11.4" r="1.25" fill="#fff" fill-opacity=".85"/><circle cx="18.2" cy="13.8" r="1.25" fill="#fff" fill-opacity=".85"/>',
-  playtime:'<ellipse cx="12" cy="9.2" rx="6.1" ry="7"/><path d="M12 16.2l-1.5 1.9h3Z"/><path d="M12 18.6c0 2 2.4 1.4 2.4 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>'
+  // Tilting the stick is what separates a joystick from a chess pawn: a pawn is
+  // always upright. Two buttons beside it finish the arcade panel.
+  game:    '<rect x="2.6" y="16.5" width="18.8" height="4.7" rx="1.8"/>'
+           + '<path d="M11.2 17 15 8.8" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/>'
+           + '<circle cx="15.7" cy="6.6" r="3.1"/>'
+           + '<circle cx="5.9" cy="18.85" r="1.35" fill="#000" fill-opacity=".45"/>'
+           + '<circle cx="9.5" cy="18.85" r="1.35" fill="#000" fill-opacity=".45"/>',
+  playtime:'<ellipse cx="12" cy="9.2" rx="6.1" ry="7"/><path d="M12 16.2l-1.5 1.9h3Z"/><path d="M12 18.6c0 2 2.4 1.4 2.4 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  // keys, because a treble clef turns to mush at this size
+  // White keys as the slab and black keys cut into it -- drawn the other way
+  // round it just looked like a card with three tabs.
+  classical:'<rect x="2.8" y="6.7" width="18.4" height="10.6" rx="1.5"/>'
+           + '<rect x="7.1" y="6.7" width="2.1" height="6.3" rx=".4" fill="#000" fill-opacity=".6"/>'
+           + '<rect x="10.95" y="6.7" width="2.1" height="6.3" rx=".4" fill="#000" fill-opacity=".6"/>'
+           + '<rect x="14.8" y="6.7" width="2.1" height="6.3" rx=".4" fill="#000" fill-opacity=".6"/>'
+           + '<path d="M5.15 13.4v3.9M9.05 13.4v3.9M12.9 13.4v3.9M16.75 13.4v3.9" fill="none" stroke="#000" stroke-opacity=".38" stroke-width="1"/>',
+  // a drop and its ripples -- every moon and star in this row is already taken,
+  // and it matches the rain and stream this genre can put underneath itself
+  relaxing:'<path d="M12 2.6c2.5 3.2 3.8 4.9 3.8 6.6a3.8 3.8 0 0 1-7.6 0c0-1.7 1.3-3.4 3.8-6.6Z"/>'
+           + '<path d="M6.6 14.6q5.4 2.8 10.8 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'
+           + '<path d="M4.8 17.8q7.2 3.2 14.4 0" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-opacity=".7"/>'
+           + '<path d="M3.4 20.8q8.6 3 17.2 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-opacity=".45"/>'
 };
 const hexA = (hex, a) => {
   const h = hex.replace('#','');
@@ -4728,9 +4801,10 @@ async function pickMonster(m, btn){
 }
 
 function initEndless(){
-  // Two checkboxes, one setting: the grown-up screen and the child's screen are
-  // looking at the same song, so they must not disagree about whether it stops.
-  const boxes = ['#sEndless', '#mEndless'].map($).filter(Boolean);
+  // Three checkboxes, one setting: the front screen, the Advanced tab and the
+  // child's screen are all looking at the same song, so they must not disagree
+  // about whether it stops. Advanced was the one missing a way to turn it on.
+  const boxes = ['#sEndless', '#aEndless', '#mEndless'].map($).filter(Boolean);
   for (const b of boxes) b.onchange = () => {
     ui.endless = b.checked;
     for (const o of boxes) o.checked = ui.endless;
@@ -4740,6 +4814,169 @@ function initEndless(){
       stopTimer = setTimeout(stop, Math.max(0, (endsAt - Tone.now() + 3) * 1000));
     }
   };
+}
+
+// ---------------------------------------------------------------------------
+// Hide and seek. One song plays the whole time and never stops; catching a
+// monster un-mutes the next layer of it. So the music does not restart or jump
+// between fragments in different keys -- it grows. ui.mutes is the same live
+// Set the scheduler checks at emit time, so deleting from it mid-playback is
+// all it takes for an instrument to walk in.
+// ---------------------------------------------------------------------------
+const HS_ORDER = ['bass', 'drums', 'pad', 'arp', 'lead'];
+const HS_GENRES = [['kids','uplifting'], ['chiptune','uplifting'], ['funk','uplifting'],
+                   ['folk','uplifting'], ['retro','driving'], ['vapor','dreamy']];
+let hsOn = false, hsQueue = [], hsCaught = 0, hsEl = null, hsMove = null, hsDuck = null, hsPing = null;
+
+function hsSay(t){ const n = $('#hsSay'); if (n) n.textContent = t || ''; }
+function hsProgress(){
+  const bar = $('#hsBar'); if (!bar) return;
+  const total = hsCaught + hsQueue.length;
+  bar.innerHTML = `<i style="width:${total ? Math.round(100 * hsCaught / total) : 0}%"></i>`;
+}
+// A short bell that climbs as the round fills up, so the reward is not the same
+// sound five times. Its own synth, because the rig is busy playing the song.
+function hsBeep(step){
+  try {
+    if (!hsPing){
+      hsPing = new Tone.PolySynth(Tone.FMSynth, { harmonicity:3, modulationIndex:1.4,
+        envelope:{ attack:.002, decay:.5, sustain:0, release:.5 },
+        modulationEnvelope:{ attack:.002, decay:.2, sustain:0, release:.2 } }).toDestination();
+      hsPing.volume.value = -10;
+    }
+    hsPing.triggerAttackRelease(['C6','E6','G6','B6','D7','G7'][Math.min(step, 5)], .45);
+  } catch(e){}
+}
+
+function hsPlace(el){
+  // Mostly at the edge of a blob, so it reads as coming out from behind something
+  // rather than just teleporting around an empty field. Kept off the very edges
+  // either way, so a tap near the rim still lands on the monster.
+  const f = $('#hsField'), blobs = f ? [...f.querySelectorAll('.hsblob')] : [];
+  if (blobs.length && Math.random() < .72){
+    const fr = f.getBoundingClientRect();
+    const r = blobs[Math.floor(Math.random() * blobs.length)].getBoundingClientRect();
+    const a = Math.random() * Math.PI * 2;
+    const x = (r.left - fr.left + r.width/2  + Math.cos(a) * r.width  * .54) / fr.width  * 100;
+    const y = (r.top  - fr.top  + r.height/2 + Math.sin(a) * r.height * .54) / fr.height * 100;
+    el.style.left = clamp(x, 12, 88) + '%';
+    el.style.top  = clamp(y, 14, 84) + '%';
+    return;
+  }
+  el.style.left = (12 + Math.random() * 76) + '%';
+  el.style.top  = (14 + Math.random() * 70) + '%';
+}
+function hsSpawn(){
+  const field = $('#hsField'); if (!field || !hsQueue.length) return;
+  const m = MONSTERS[Math.floor(Math.random() * MONSTERS.length)];
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'hsmon';
+  b.setAttribute('aria-label', 'Catch the ' + m.label + ' monster');
+  const art = m.art(m.c[0]);
+  b.innerHTML = `<svg viewBox="-6 -6 112 112" aria-hidden="true"><g class="mrim">${art}</g>${art}</svg>`;
+  hsPlace(b);
+  b.onclick = () => hsCatch(b);
+  field.appendChild(b);
+  hsEl = b;
+  // drift to a new spot every couple of seconds, and duck behind a blob now and then
+  clearInterval(hsMove); clearInterval(hsDuck);
+  hsMove = setInterval(() => { if (hsEl === b) hsPlace(b); }, 2200);
+  hsDuck = setInterval(() => {
+    if (hsEl !== b) return;
+    b.classList.add('duck');
+    setTimeout(() => b.classList.remove('duck'), 700);
+  }, 5200);
+}
+// It shies away from the finger but never outruns it: the target always stays
+// catchable, it just does not sit still and wait.
+function hsDodge(e){
+  if (!hsOn || !hsEl) return;
+  const f = $('#hsField').getBoundingClientRect(), r = hsEl.getBoundingClientRect();
+  const cx = r.left + r.width/2, cy = r.top + r.height/2;
+  const dx = e.clientX - cx, dy = e.clientY - cy;
+  if (dx*dx + dy*dy > 104*104) return;
+  const d = Math.max(1, Math.hypot(dx, dy));
+  const nx = ((cx - f.left) - dx/d * 86) / f.width * 100;
+  const ny = ((cy - f.top)  - dy/d * 86) / f.height * 100;
+  hsEl.style.left = clamp(nx, 12, 88) + '%';
+  hsEl.style.top  = clamp(ny, 14, 84) + '%';
+}
+
+function hsCatch(b){
+  if (!hsOn || b !== hsEl) return;
+  hsEl = null;
+  clearInterval(hsMove); clearInterval(hsDuck);
+  b.classList.add('got');
+  setTimeout(() => b.remove(), 420);
+  const tr = hsQueue.shift();
+  hsBeep(hsCaught);
+  hsCaught++;
+  if (tr) ui.mutes.delete(tr);          // the live Set the scheduler reads
+  hsProgress();
+  if (hsQueue.length){
+    hsSay(['Got it!', 'Found you!', 'Nice one!', 'Caught!'][hsCaught % 4]);
+    setTimeout(() => { if (hsOn) hsSpawn(); }, 620);
+  } else {
+    hsSay('You found them all!');
+    setTimeout(() => { if (hsOn) hsRound(true); }, 4200);
+  }
+}
+
+// A round: a song where every layer actually sounds, so each catch is audible.
+// Re-rolling the seed keeps each genre's own character, which forcing the
+// parts on would have flattened.
+function hsRound(keepPlaying){
+  const [g, mood] = HS_GENRES[Math.floor(Math.random() * HS_GENRES.length)];
+  ui.genre = g; ui.mood = mood; ui.style = null; ui.ref = null; ui.plan = null;
+  let best = null;
+  for (let i = 0; i < 40; i++){
+    const seed = newSeed();
+    newSong({ genre:g, mood, key:'', length:'normal', chords:[], seed, style:null, ref:null });
+    const have = HS_ORDER.filter(t => t === 'bass' || (song.p[t] && song.p[t] !== 'none'));
+    if (!best || have.length > best.have.length) best = { seed, have };
+    if (have.length === HS_ORDER.length) break;
+  }
+  newSong({ genre:g, mood, key:'', length:'normal', chords:[], seed:best.seed, style:null, ref:null });
+  if (song.p.lead !== 'none') song.p.leadVerse = true;
+  hsQueue = HS_ORDER.filter(t => best.have.includes(t));
+  hsCaught = 0;
+  ui.solo = null;
+  ui.mutes = new Set(hsQueue);          // chords carry the song until the rest arrive
+  hsProgress();
+  hsSay('Find the monster!');
+  if (!keepPlaying){
+    ui.endless = true;
+    document.querySelectorAll('#sEndless,#aEndless,#mEndless').forEach(c => c.checked = true);
+    play(0);
+  }
+  $('#hsField').querySelectorAll('.hsmon').forEach(n => n.remove());
+  setTimeout(() => { if (hsOn) hsSpawn(); }, keepPlaying ? 900 : 1400);
+}
+
+function hsStart(){
+  hsOn = true;
+  ui.look = 1.2;        // ~1s from tap to the instrument arriving, instead of ~3
+  $('#hsGo').textContent = 'New game';
+  hsRound(false);
+}
+function hsStop(){
+  hsOn = false;
+  ui.look = 0;
+  clearInterval(hsMove); clearInterval(hsDuck);
+  hsEl = null;
+  const f = $('#hsField'); if (f) f.querySelectorAll('.hsmon').forEach(n => n.remove());
+  ui.mutes = new Set();
+  stop();
+  $('#hsGo').textContent = 'Start';
+  hsSay('Tap Start to play');
+  hsProgress();
+}
+function initHideSeek(){
+  const f = $('#hsField'); if (!f) return;
+  f.addEventListener('pointermove', hsDodge);
+  $('#hsGo').onclick = () => hsStart();
+  $('#hsStop').onclick = () => hsStop();
+  hsProgress();
 }
 
 function initMonsters(){
@@ -4785,7 +5022,7 @@ function syncAdvancedChips(){
 
 function initSimple(){
   renderStyles();
-  const tabs = [['#tabSimple', '#simplePanel'], ['#tabKids', '#kidsPanel'], ['#tabAdv', '#advPanel'], ['#tabPrac', '#pracPanel']];
+  const tabs = [['#tabSimple', '#simplePanel'], ['#tabKids', '#kidsPanel'], ['#tabHS', '#hsPanel'], ['#tabAdv', '#advPanel'], ['#tabPrac', '#pracPanel']];
   for (const [tb, pn] of tabs){
     $(tb).onclick = () => {
       for (const [t2, p2] of tabs){
@@ -4795,6 +5032,7 @@ function initSimple(){
         $(p2).hidden = !on;
       }
       if (tb === '#tabKids') renderMonsters();
+      if (tb !== '#tabHS' && hsOn) hsStop();
       if (tb === '#tabAdv') syncAdvancedChips();
       if (tb === '#tabPrac'){ syncPractice(); renderMutes(); }
     };
@@ -4831,6 +5069,7 @@ function initSimple(){
 wireSeek();
 initSimple();
 initMonsters();
+initHideSeek();
 initEndless();
 
 </script>
