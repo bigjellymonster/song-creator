@@ -246,6 +246,23 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
   .hsslot .inst{width:23px;height:23px} .hsband{gap:6px} }
 @media (prefers-reduced-motion:reduce){ .hsslot.full svg.mon,.hsslot.full{animation:none} }
 
+/* ---- lite mode --------------------------------------------------------
+   Every filter in this app -- hue-rotate on a full-screen sky, saturate over
+   it, drop-shadow on eighteen moving sparkles -- is cheap on a good GPU and
+   brutal on a weak one, where it falls back to the CPU and takes the audio
+   thread down with it. Lite mode removes all of them and thins the particles.
+   The app looks plainer and sounds the same, which is the right trade. */
+html.lite .hssky{filter:none!important}
+html.lite .hssky i{animation:hsdrift 52s ease-in-out infinite!important}
+html.lite .hsspark,html.lite .hsburst,html.lite .padspark{filter:none!important}
+html.lite .hsmon svg,html.lite .padkey svg.mon,html.lite .hsblob svg{filter:none!important}
+html.lite .hsrainbow{animation:none!important}
+html.lite .padkey.oct{animation:none!important}
+html.lite .hsslot.full svg.mon,html.lite .padkey svg.mon{animation:none!important}
+html.lite .mon svg{filter:none!important}
+/* ---- diagnostics ---- */
+.diag{font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;color:var(--muted);
+  background:var(--panel2);border-radius:10px;padding:10px;margin:8px 0;overflow-x:auto}
 /* ---- play-along pads --------------------------------------------------
    Phone portrait first: two columns of big square pads, thumb-sized, so the
    whole scale is reachable without scrolling. Every pad is a note of the key,
@@ -656,7 +673,21 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
       </div>
       <div class="status" id="status" role="status"></div>
     </div>
+    <div class="card" style="grid-column:1/-1">
+    <div class="group">
+          <span class="lab">If it sounds wrong on this device</span>
+          <div class="row">
+            <button id="diagRun">Check this device</button>
+            <button id="diagTone">Test tone</button>
+            <button id="diagLite">Lite mode: auto</button>
+            <button id="diagNoSmp">Samples: on</button>
+          </div>
+          <div class="diag" id="diagOut" hidden></div>
+        </div>
   </div>
+
+</div>
+
   <div id="pracPanel" hidden>
     <p class="lede">Play along. Mute the part you want to play yourself, slow it down, or loop a section.</p>
     <div id="pracEmpty" class="empty">Make a song first &mdash; then come back here to play along with it.</div>
@@ -709,7 +740,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build bf67619d &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build 05e0d544 &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -2626,7 +2657,13 @@ async function fetchSamplePack(url){
 }
 // Kick decoding off as soon as the page parses, so the first play never waits.
 // SAMPLE_PACK is the inlined core; an extended pack can be pulled in later.
-let SAMPLES_READY = (typeof SAMPLE_PACK !== 'undefined')
+// Roughly 170 pitched samples decode to ~50MB of float32 PCM. On a phone that
+// cannot hold that, every voice falls back to its synth and the app still works
+// -- so this switch is the first thing to try on a device that plays nothing.
+let NO_SAMPLES = false;
+try { NO_SAMPLES = localStorage.getItem('ss-nosamples') === '1'
+                || /[?&]nosamples\b/.test(location.search); } catch(e){}
+let SAMPLES_READY = (typeof SAMPLE_PACK !== 'undefined' && !NO_SAMPLES)
   ? loadSamples(SAMPLE_PACK)
   : Promise.resolve(false);
 function makeRig(){
@@ -4999,9 +5036,31 @@ const hsTint = () => HS_TINTS[hsRoundNo % HS_TINTS.length];
 // band fills out -- eight decibels from the bare chords to everyone playing,
 // which is the swell the compressor was cancelling.
 const HS_SWELL = 8;
+// The scheduler runs 1.2s ahead and only tops up twice a second, so an un-muted
+// instrument cannot be heard for well over a second after the tap -- far too
+// long to feel connected. So the catch plays that instrument itself, right now,
+// straight into the rig. The scheduled part arrives underneath a moment later
+// and the join is inaudible because it is the same instrument either way.
+function hsStab(tr){
+  if (!rig || !song) return;
+  const t = Tone.now() + .02;
+  const beat = playing ? playFrom + Math.max(0, Tone.now() - playOrigin) * song.tempo / 60 : 0;
+  const at = chordAtBeat(((beat % song.totalBeats) + song.totalBeats) % song.totalBeats);
+  const ch = at && at.ch;
+  const oct = (n, lo) => lo + ((((n - lo) % 12) + 12) % 12);
+  try {
+    if (tr === 'drums'){ rig.drum('kick', t, .9); rig.drum('crash', t, .5); }
+    else if (ch){
+      const n = tr === 'bass' ? [oct(ch.r, 36)]
+              : tr === 'lead' ? [oct(ch.r, 72)]
+              : ch.iv.map(iv => 60 + ch.r + iv);
+      rig.play(tr, n, tr === 'lead' ? .7 : 1.4, t, .75);
+    }
+  } catch(e){}
+}
 function hsLevel(){
   if (!rig || !rig.vol) return;
-  const n = hsSlots.length || 1, got = hsSlots.filter(s => s.mon).length;
+  const n = hsSlots.length || 1, got = Math.min(hsCaught, n);
   try { rig.vol.volume.rampTo(ui.vol - HS_SWELL * (1 - got / n), .55); } catch(e){}
 }
 // Paint one monster in the current round's colours. Natural rounds just use the
@@ -5256,7 +5315,11 @@ function hsCatch(b){
   const tr = hsQueue.shift();
   hsBeep(hsCaught);
   hsCaught++;
-  if (tr) ui.mutes.delete(tr);          // the live Set the scheduler reads
+  if (tr){
+    ui.mutes.delete(tr);               // the live Set the scheduler reads
+    hsStab(tr);                        // ...and the same instrument, audible now
+  }
+  hsLevel();                           // the swell too, rather than after the flight
   hsFly(b, mon, slotIndex, () => {
     if (hsSlots[slotIndex]){ hsSlots[slotIndex].mon = mon; hsSlots[slotIndex].tint = hsTint(); }
     hsProgress();
@@ -5278,7 +5341,7 @@ function hsCatch(b){
 // the trophy row, so the session accumulates without the picture disagreeing
 // with the music once the next round starts sparse again.
 function hsBow(){
-  for (let i = 0; i < 7; i++)
+  for (let i = 0; i < (LITE ? 3 : 7); i++)
     setTimeout(() => hsBurst(14 + Math.random()*72, 18 + Math.random()*64, true), i * 130);
   const row = $('#hsTrophies');
   if (row){
@@ -5349,7 +5412,7 @@ function hsRound(keepPlaying){
     play(0).then(hsLevel);
   }
   $('#hsField').querySelectorAll('.hsmon').forEach(n => n.remove());
-  hsSparkle(18);
+  hsSparkle(LITE ? 5 : 18);
   setTimeout(() => { if (hsOn) hsSpawn(); }, keepPlaying ? 900 : 1400);
 }
 
@@ -5363,7 +5426,7 @@ function hsStart(){
     sky.innerHTML = '<i></i>';
     f.insertBefore(sky, f.firstChild);
   }
-  hsSparkle(18);
+  hsSparkle(LITE ? 5 : 18);
   ui.look = 1.2;        // ~1s from tap to the instrument arriving, instead of ~3
   $('#hsGo').textContent = 'New game';
   hsRound(false);
@@ -5411,7 +5474,7 @@ function hsSparkle(n){
 // A catch throws a handful outward from wherever the monster was standing.
 function hsBurst(x, y, big){
   const f = $('#hsField'); if (!f) return;
-  const n = big ? 26 : 14;
+  const n = LITE ? (big ? 9 : 5) : (big ? 26 : 14);
   for (let i = 0; i < n; i++){
     const s = document.createElement('i');
     s.className = 'hsburst';
@@ -5645,6 +5708,108 @@ function initPads(){
   };
 }
 
+// ---------------------------------------------------------------------------
+// Lite mode and device diagnostics.
+// A weak phone shows the same three symptoms together -- distorted or scratchy
+// audio, animations that do not run, and features that never start -- because
+// they share one cause: the main thread is saturated, and on mobile the audio
+// callback starves with it. Rather than guess which phone can cope, measure.
+// ---------------------------------------------------------------------------
+let LITE = false, litePref = 'auto', diagFps = 0;
+const lsGet = k => { try { return localStorage.getItem(k); } catch(e){ return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e){} };
+
+function setLite(on){
+  LITE = !!on;
+  document.documentElement.classList.toggle('lite', LITE);
+}
+// Count real frames for two thirds of a second. A device that cannot hold 40fps
+// with nothing happening will not hold audio together once a song is running.
+function measureFps(){
+  return new Promise(res => {
+    let n = 0; const t0 = performance.now();
+    const tick = () => { n++; (performance.now() - t0 < 660) ? requestAnimationFrame(tick)
+                                                             : res(Math.round(n * 1000 / (performance.now() - t0))); };
+    requestAnimationFrame(tick);
+  });
+}
+async function initLite(){
+  litePref = lsGet('ss-lite') || 'auto';
+  if (litePref === 'on'){ setLite(true); return; }
+  if (litePref === 'off'){ setLite(false); return; }
+  diagFps = await measureFps();
+  const cores = navigator.hardwareConcurrency || 4;
+  const mem = navigator.deviceMemory || 4;
+  setLite(diagFps < 40 || cores <= 4 || mem <= 3);
+}
+
+async function diagReport(){
+  const out = $('#diagOut'); if (!out) return;
+  out.hidden = false;
+  out.textContent = 'Checking...';
+  if (!diagFps) diagFps = await measureFps();
+  const ctx = Tone.context;
+  let decoded = 0, insts = 0;
+  try { for (const k of Object.keys(SMP)){ insts++; decoded += Object.keys(SMP[k]).length; } } catch(e){}
+  let drums = 0; try { drums = Object.keys(DRUMS || {}).length; } catch(e){}
+  const L = [
+    'build      ' + (($('#buildId') || {}).textContent || '?'),
+    'audio      ' + ctx.state + ' @ ' + ctx.sampleRate + 'Hz',
+    'latency    ' + Math.round((ctx.baseLatency || 0) * 1000) + 'ms base, lookAhead '
+                  + Math.round((Tone.context.lookAhead || 0) * 1000) + 'ms',
+    'samples    ' + decoded + ' notes over ' + insts + ' instruments' + (NO_SAMPLES ? '  (OFF)' : ''),
+    'drums      ' + drums + ' sounds',
+    'frames     ' + diagFps + ' fps idle',
+    'cores      ' + (navigator.hardwareConcurrency || '?') + '   memory ' + (navigator.deviceMemory || '?') + 'GB',
+    'screen     ' + innerWidth + 'x' + innerHeight + ' @' + (devicePixelRatio || 1) + 'x',
+    'lite       ' + (LITE ? 'ON' : 'off') + ' (' + litePref + ')',
+    'device     ' + navigator.userAgent.replace(/^Mozilla\/5\.0 \(/, '').slice(0, 110)
+  ];
+  out.textContent = L.join('\n');
+}
+// A bare oscillator through the same context the app uses. If this is silent,
+// nothing else in the app was ever going to make a sound.
+async function diagTone(){
+  const out = $('#diagOut');
+  try {
+    await Tone.start();
+    const s = new Tone.Oscillator(440, 'sine').toDestination();
+    s.volume.value = -14;
+    s.start(); s.stop('+0.6');
+    setTimeout(() => { try { s.dispose(); } catch(e){} }, 1400);
+    if (out){ out.hidden = false; out.textContent = 'Playing a 440Hz tone for half a second.\n'
+      + 'Heard it: audio works, the problem is load.\nSilent: the audio device never started.'; }
+  } catch(e){
+    if (out){ out.hidden = false; out.textContent = 'Could not start audio: ' + e.message; }
+  }
+}
+function initDiag(){
+  const lb = $('#diagLite'), nb = $('#diagNoSmp');
+  if (!lb) return;
+  const paint = () => {
+    lb.textContent = 'Lite mode: ' + (litePref === 'auto' ? 'auto' + (LITE ? ' (on)' : ' (off)') : litePref);
+    nb.textContent = 'Samples: ' + (lsGet('ss-nosamples') === '1' ? 'off' : 'on');
+  };
+  paint();
+  if ($('#diagRun')) $('#diagRun').onclick = diagReport;
+  if ($('#diagTone')) $('#diagTone').onclick = diagTone;
+  lb.onclick = () => {
+    litePref = litePref === 'auto' ? 'on' : litePref === 'on' ? 'off' : 'auto';
+    lsSet('ss-lite', litePref);
+    if (litePref === 'on') setLite(true);
+    else if (litePref === 'off') setLite(false);
+    else initLite();
+    paint();
+  };
+  nb.onclick = () => {
+    const off = lsGet('ss-nosamples') === '1';
+    lsSet('ss-nosamples', off ? '0' : '1');
+    paint();
+    if ($('#diagOut')){ $('#diagOut').hidden = false;
+      $('#diagOut').textContent = 'Reload the page for this to take effect.'; }
+  };
+}
+
 function initMonsters(){
   renderMonsters();
   const go = $('#mNameGo'), inp = $('#mNameIn');
@@ -5738,6 +5903,8 @@ initSimple();
 initMonsters();
 initHideSeek();
 initPads();
+initDiag();
+initLite();
 initEndless();
 
 </script>
