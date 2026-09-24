@@ -741,7 +741,7 @@ html.lite .mon svg{filter:none!important}
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build e2763f75 &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build 58c1f904 &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -2663,6 +2663,7 @@ async function fetchSamplePack(url){
 // -- so this switch is the first thing to try on a device that plays nothing.
 // Set from the device check in ui.js. Declared here because makeRig reads it.
 let LITE = false;
+let HIT_LIVE = 0, HIT_MADE = 0, HIT_GONE = 0;   // per-hit drum nodes: made, ended, still alive
 let NO_SAMPLES = false;
 try { NO_SAMPLES = localStorage.getItem('ss-nosamples') === '1'
                 || /[?&]nosamples\b/.test(location.search); } catch(e){}
@@ -2671,6 +2672,7 @@ let SAMPLES_READY = (typeof SAMPLE_PACK !== 'undefined' && !NO_SAMPLES)
   : Promise.resolve(false);
 function makeRig(){
   const p = song.p, spb = 60 / song.tempo, nodes = [];
+  const hits = new Set();   // per-hit drum nodes still waiting to finish
   const keep = n => (nodes.push(n), n), fx = keep;
   const bf = Math.pow(2, (p.brightness - .5) * 1.6);   // brightness -> filter multiplier
   const sf = .3 + p.space * 1.2;                       // space -> reverb send multiplier
@@ -3582,7 +3584,20 @@ function makeRig(){
         g.connect(dest);
         const src = new Tone.ToneBufferSource({ url:buf, fadeOut:.01 });
         src.connect(g); src.start(t);
-        src.onended = () => { try { src.dispose(); g.dispose(); } catch(e){} };
+        HIT_LIVE++; HIT_MADE++;
+        // These two are created per hit, outside the rig's node list, so
+        // dispose() never saw them -- and a source scheduled to sound after the
+        // song stops never fires onended, so it was orphaned in the audio graph
+        // for the life of the page. Measured: ~8 leaked per song, climbing until
+        // the audio thread gave up. The rig now owns them and cleans up whatever
+        // has not ended by the time it goes.
+        const pair2 = { src, g };
+        hits.add(pair2);
+        src.onended = () => {
+          if (!hits.delete(pair2)) return;      // already cleaned up by dispose()
+          HIT_LIVE--; HIT_GONE++;
+          try { src.dispose(); g.dispose(); } catch(e){}
+        };
       };
     };
     for (const voice of Object.keys(kitMap)){
@@ -3642,7 +3657,13 @@ function makeRig(){
       g.linearRampToValueAtTime(d, t + .004);
       g.setTargetAtTime(1, t + .012, duckRel / 3.2);
     },
-    dispose(){ nodes.forEach(n => { try { n.dispose(); } catch(e){} }); }
+    dispose(){
+      // Anything still pending was scheduled past the end and will never end on
+      // its own, so it is disposed here or not at all.
+      hits.forEach(h => { HIT_LIVE--; try { h.src.dispose(); h.g.dispose(); } catch(e){} });
+      hits.clear();
+      nodes.forEach(n => { try { n.dispose(); } catch(e){} });
+    }
   };
 }
 
@@ -5772,6 +5793,7 @@ async function diagReport(){
                   + Math.round((Tone.context.lookAhead || 0) * 1000) + 'ms',
     'samples    ' + decoded + ' notes over ' + insts + ' instruments' + (NO_SAMPLES ? '  (OFF)' : ''),
     'drums      ' + drums + ' sounds',
+    'hit nodes  ' + HIT_LIVE + ' live of ' + HIT_MADE + ' made  (should settle near 0)',
     'frames     ' + diagFps + ' fps idle',
     'cores      ' + (navigator.hardwareConcurrency || '?') + '   memory ' + (navigator.deviceMemory || '?') + 'GB',
     'screen     ' + innerWidth + 'x' + innerHeight + ' @' + (devicePixelRatio || 1) + 'x',
