@@ -741,7 +741,7 @@ html.lite .mon svg{filter:none!important}
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build 3cc89539 &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build e2763f75 &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -2661,6 +2661,8 @@ async function fetchSamplePack(url){
 // Roughly 170 pitched samples decode to ~50MB of float32 PCM. On a phone that
 // cannot hold that, every voice falls back to its synth and the app still works
 // -- so this switch is the first thing to try on a device that plays nothing.
+// Set from the device check in ui.js. Declared here because makeRig reads it.
+let LITE = false;
 let NO_SAMPLES = false;
 try { NO_SAMPLES = localStorage.getItem('ss-nosamples') === '1'
                 || /[?&]nosamples\b/.test(location.search); } catch(e){}
@@ -2698,7 +2700,7 @@ function makeRig(){
   const duckRel = Math.min(.32, spb*.62);
 
   // ---- sends ----
-  const verb = fx(new Tone.Reverb({ decay:1 + p.space*7, preDelay:.02, wet:1 })); verb.connect(tonal);
+  const verb = fx(new Tone.Reverb({ decay:LITE ? Math.min(2.2, 1 + p.space*7) : 1 + p.space*7, preDelay:.02, wet:1 })); verb.connect(tonal);
   const verbIn = fx(new Tone.Gain(1)); verbIn.connect(verb); readies.push(verb.ready);
   const delay = fx(new Tone.PingPongDelay({ delayTime:spb*.75, feedback:.32, wet:1 }));
   delay.connect(tonal); delay.connect(verbIn);
@@ -2747,7 +2749,7 @@ function makeRig(){
     return { out:g, n:{ triggerAttackRelease:(n2, d, t, v) => { a.triggerAttackRelease(n2, d, t, v); b.triggerAttackRelease(n2, d, t, v); } } };
   };
   const polyPair = (opts, db, cents, pan) => pair(dt => {
-    const s = new Tone.PolySynth(Tone.Synth, { ...opts, detune:dt, volume:db }); s.maxPolyphony = 16; return s;
+    const s = new Tone.PolySynth(Tone.Synth, { ...opts, detune:dt, volume:db }); s.maxPolyphony = LITE ? 6 : 16; return s;
   }, cents, pan);
   // a second voice stacked on the same note, for weight (sub bass) rather than width
   const stack = (a, b, subMaxHz) => ({ mono:true, n:{ triggerAttackRelease:(n2, d, t, v) => {
@@ -2812,7 +2814,7 @@ function makeRig(){
       detune:-1200,
       envelope:{ attack:.002, decay:.02, sustain:1, release:.09 },
       volume:db }));
-    s.maxPolyphony = 16;
+    s.maxPolyphony = LITE ? 6 : 16;
     return { n:s, out:chain(leslie(s, fast), fx(new Tone.Filter((top || 6000) * bf, 'lowpass'))) };
   };
 
@@ -2850,7 +2852,7 @@ function makeRig(){
         oscillator:{ type:'sawtooth' }, filter:{ Q:1.5, type:'lowpass', rolloff:-24 },
         envelope:{ attack:.03, decay:.5, sustain:.65, release:.9 },
         filterEnvelope:{ attack:.04, decay:.5, sustain:.4, release:.8, baseFrequency:340*bf, octaves:2.8 } });
-        s.maxPolyphony = 16; return s; }, 7, .4);
+        s.maxPolyphony = LITE ? 6 : 16; return s; }, 7, .4);
       route(chain(L.out, fx(new Tone.Chorus(1.2, 3, .4).start())), .9, .35);
       return L;
     },
@@ -2858,20 +2860,20 @@ function makeRig(){
       const s = fx(new Tone.PolySynth(Tone.FMSynth, { harmonicity:3, modulationIndex:2.4, oscillator:{ type:'sine' },
         envelope:{ attack:.005, decay:1.4, sustain:.28, release:1.2 },
         modulationEnvelope:{ attack:.002, decay:.55, sustain:.08, release:.5 }, volume:-14 }));
-      s.maxPolyphony = 16;
+      s.maxPolyphony = LITE ? 6 : 16;
       route(chain(s, fx(new Tone.Vibrato(4.5, .05)), fx(new Tone.Tremolo({ frequency:3.2, depth:.35, spread:170 }).start())), .9, .35);
       return { n:s };
     },
     clav: () => {
       const s = fx(new Tone.PolySynth(Tone.Synth, { oscillator:{ type:'square' }, envelope:{ attack:.001, decay:.16, sustain:0, release:.05 }, volume:-9 }));
-      s.maxPolyphony = 16;
+      s.maxPolyphony = LITE ? 6 : 16;
       route(chain(s, fx(new Tone.Filter({ frequency:1500*bf, type:'bandpass', Q:1.6 })), fx(new Tone.Chorus(4, 1.5, .3).start())), 1, .14);
       return { n:s };
     },
     powergtrSyn: () => {   // double-tracked: two takes hard left and right, as rock guitars are recorded
       const L = pair(dt => { const s = new Tone.PolySynth(Tone.Synth, { detune:dt, volume:-22,
         oscillator:{ type:'fatsawtooth', count:2, spread:10 }, envelope:{ attack:.004, decay:.3, sustain:.8, release:.15 } });
-        s.maxPolyphony = 16; return s; }, 11, .65);
+        s.maxPolyphony = LITE ? 6 : 16; return s; }, 11, .65);
       route(chain(L.out, fx(new Tone.Distortion({ distortion:.85, oversample:'2x' })),
         fx(new Tone.Filter(3200*bf, 'lowpass', -24)), fx(new Tone.Filter(90, 'highpass'))), 1, .16);
       return L;
@@ -2884,7 +2886,7 @@ function makeRig(){
     },
     piano: () => {
       const s = fx(new Tone.PolySynth(Tone.Synth, { oscillator:{ type:'triangle' }, envelope:{ attack:.005, decay:2, sustain:.05, release:2.5 }, volume:-11 }));
-      s.maxPolyphony = 16; route(s, .6, .6, .25); return { n:s };
+      s.maxPolyphony = LITE ? 6 : 16; route(s, .6, .6, .25); return { n:s };
     },
     // hollow and reedy rather than bright: pulse width, not sawtooth
     pwm: () => {
@@ -2899,7 +2901,7 @@ function makeRig(){
         oscillator:{ type:'sine' }, modulation:{ type:'sine' },
         envelope:{ attack:.01, decay:2.4, sustain:.12, release:2.6 },
         modulationEnvelope:{ attack:.005, decay:1.1, sustain:.04, release:1 }, volume:-19 }));
-      s.maxPolyphony = 16;
+      s.maxPolyphony = LITE ? 6 : 16;
       route(chain(s, fx(new Tone.Filter(5200*bf, 'lowpass'))), .6, .75, .3);
       return { n:s };
     },
@@ -2907,7 +2909,7 @@ function makeRig(){
     stringbox: () => {
       const s = fx(new Tone.PolySynth(Tone.Synth, { oscillator:{ type:'fatsawtooth', count:4, spread:46 },
         envelope:{ attack:.65, decay:1, sustain:.85, release:2.8 }, volume:-26 }));
-      s.maxPolyphony = 16;
+      s.maxPolyphony = LITE ? 6 : 16;
       route(chain(s, sweep(fx(new Tone.Filter(2100*bf, 'lowpass')), 2100*bf, .22, .03),
         fx(new Tone.Chorus({ frequency:.55, delayTime:6, depth:.9, spread:180 }).start())), .8, .6);
       return { n:s };
@@ -3010,7 +3012,7 @@ function makeRig(){
       if (!s) return COMP_SYN.powergtrSyn();
       const amp = chain(s,
         fx(new Tone.Filter({ frequency:150, type:'highpass', rolloff:-12 })),
-        fx(new Tone.Distortion({ distortion:.46, oversample:'4x' })),
+        fx(new Tone.Distortion({ distortion:.46, oversample:LITE ? 'none' : '4x' })),
         fx(new Tone.Filter({ frequency:3400*bf, type:'lowpass', rolloff:-48 })),
         fx(new Tone.Filter({ frequency:95, type:'highpass', rolloff:-24 })),
         fx(new Tone.Filter({ frequency:2100*bf, type:'peaking', Q:1.1, gain:3.5 })));
@@ -3062,7 +3064,7 @@ function makeRig(){
         envelope:{ attack:1.3, decay:.6, sustain:.8, release:3 } }, -27, 8, .55);
       route(chain(L.out, sweep(fx(new Tone.Filter(2300*bf, 'lowpass')), 2300*bf, .25, .04)), .6, .65); return L; },
     organ: () => { const s = fx(new Tone.PolySynth(Tone.Synth, { oscillator:{ type:'fattriangle', count:2, spread:10 },
-        envelope:{ attack:.02, decay:.1, sustain:.9, release:.3 }, volume:-19 })); s.maxPolyphony = 16;
+        envelope:{ attack:.02, decay:.1, sustain:.9, release:.3 }, volume:-19 })); s.maxPolyphony = LITE ? 6 : 16;
       route(chain(s, fx(new Tone.Chorus(6, 2, .6).start()), fx(new Tone.Filter(2200*bf, 'lowpass'))), .8, .28); return { n:s }; },
     synthpad: () => { const L = polyPair({ oscillator:{ type:'fatsawtooth', count:2, spread:26 },
         envelope:{ attack:1.5, decay:.7, sustain:.8, release:3.4 } }, -27, 12, .7);
@@ -3072,7 +3074,7 @@ function makeRig(){
         envelope:{ attack:1.1, decay:.5, sustain:.85, release:2.6 } }, -21, 7, .6);
       route(chain(L.out, fx(new Tone.Vibrato(4.8, .07)), fx(new Tone.Filter(2000*bf, 'lowpass'))), .55, .7); return L; },
     stringbox: () => { const s = fx(new Tone.PolySynth(Tone.Synth, { oscillator:{ type:'fatsawtooth', count:4, spread:46 },
-        envelope:{ attack:1.1, decay:1, sustain:.85, release:3.2 }, volume:-29 })); s.maxPolyphony = 16;
+        envelope:{ attack:1.1, decay:1, sustain:.85, release:3.2 }, volume:-29 })); s.maxPolyphony = LITE ? 6 : 16;
       route(chain(s, fx(new Tone.Filter(2000*bf, 'lowpass')),
         fx(new Tone.Chorus({ frequency:.5, delayTime:7, depth:.9, spread:180 }).start())), .7, .7); return { n:s }; },
     // cello and violin merged into one ensemble; cello wins the overlapping A3
@@ -3107,7 +3109,7 @@ function makeRig(){
     },
     glass: () => { const s = fx(new Tone.PolySynth(Tone.FMSynth, { harmonicity:4.01, modulationIndex:4,
         envelope:{ attack:.6, decay:2, sustain:.3, release:2.6 },
-        modulationEnvelope:{ attack:.4, decay:1, sustain:.1, release:1 }, volume:-27 })); s.maxPolyphony = 16;
+        modulationEnvelope:{ attack:.4, decay:1, sustain:.1, release:1 }, volume:-27 })); s.maxPolyphony = LITE ? 6 : 16;
       route(chain(s, fx(new Tone.Filter(4200*bf, 'lowpass'))), .5, .8, .2); return { n:s }; }
   };
   if (p.pad !== 'none' && PAD_SYN[p.pad]){
@@ -3196,9 +3198,9 @@ function makeRig(){
       new Tone.Vibrato(4.6, .06), new Tone.Chorus(1.5, 2.5, .35).start()),
     vibes: () => { const s = fx(new Tone.PolySynth(Tone.FMSynth, { harmonicity:4, modulationIndex:1.6,
         envelope:{ attack:.003, decay:1.5, sustain:0, release:1.3 }, modulationEnvelope:{ attack:.002, decay:.3, sustain:0, release:.3 }, volume:-17 }));
-      s.maxPolyphony = 16; route(chain(s, fx(new Tone.Tremolo({ frequency:4.4, depth:.3, spread:150 }).start())), .7, .45, .15); return { n:s }; },
+      s.maxPolyphony = LITE ? 6 : 16; route(chain(s, fx(new Tone.Tremolo({ frequency:4.4, depth:.3, spread:150 }).start())), .7, .45, .15); return { n:s }; },
     piano: () => { const s = fx(new Tone.PolySynth(Tone.Synth, { oscillator:{ type:'triangle' },
-        envelope:{ attack:.005, decay:2, sustain:.05, release:2.5 }, volume:-11 })); s.maxPolyphony = 16;
+        envelope:{ attack:.005, decay:2, sustain:.05, release:2.5 }, volume:-11 })); s.maxPolyphony = LITE ? 6 : 16;
       route(s, .6, .6, .25); return { n:s }; },
     // A narrow duty cycle is the thin, nasal chip lead; no portamento, because
     // the chip stepped between notes rather than sliding.
@@ -3215,7 +3217,7 @@ function makeRig(){
     glass: () => { const s = fx(new Tone.PolySynth(Tone.FMSynth, { harmonicity:3.01, modulationIndex:2.2,
         envelope:{ attack:.004, decay:3.2, sustain:0, release:3.4 },
         modulationEnvelope:{ attack:.002, decay:.5, sustain:0, release:.5 }, volume:-20 }));
-      s.maxPolyphony = 16;
+      s.maxPolyphony = LITE ? 6 : 16;
       route(chain(s, fx(new Tone.Filter(5200*bf, 'lowpass'))), .55, .9, .35); return { n:s }; },
     // Drawbars spread across the whole rail and the rotor switched to fast --
     // the sound of an organ taking a solo rather than comping behind one.
@@ -3299,7 +3301,7 @@ function makeRig(){
         // measured, not guessed: -30 put the pulse arp 7 dB UNDER the square one,
         // because the narrow duty loses as much to the 4.2 kHz lowpass as it gains
         volume: isP ? -24 : -27 }));
-      s.maxPolyphony = 16;
+      s.maxPolyphony = LITE ? 6 : 16;
       // a sound chip had no chorus and no reverb, so the pulse arp gets neither
       const tail = isP ? [fx(new Tone.Filter(4200*bf, 'lowpass'))]
                        : [fx(new Tone.Filter(5200*bf, 'lowpass')), fx(new Tone.Chorus(2.5, 2.5, .5).start())];
@@ -3368,7 +3370,8 @@ function makeRig(){
       // the gate chops the tail off, so a short impulse is enough here
       // (Freeverb would be cheaper but needs an AudioWorklet, which will not load from a local file)
       const gate = fx(new Tone.Gate(-34, .01)); gate.connect(bus);
-      const sv = fx(new Tone.Reverb({ decay:.9, wet:1 })); sv.connect(gate); snBus.connect(sv); readies.push(sv.ready);
+      if (LITE){ const s2 = fx(new Tone.Gain(.18 * sf)); snBus.connect(s2); s2.connect(verbIn); }
+      else { const sv = fx(new Tone.Reverb({ decay:.9, wet:1 })); sv.connect(gate); snBus.connect(sv); readies.push(sv.ready); }
     } else { const s = fx(new Tone.Gain((p.snare === 'room' ? .3 : .12) * sf)); snBus.connect(s); s.connect(verbIn); }
     const snDec = p.snare === 'tight' ? .13 : .19;
     const body = noiseChan(p.snare === 'dusty' ? -13 : -11, snDec,
@@ -3558,7 +3561,11 @@ function makeRig(){
   // samples decoded. Done last, so everything above -- the drum bus, the dusty
   // lowpass, the gated-snare reverb -- is already built and the samples inherit
   // exactly the same routing the synth kit had.
-  const kitMap = p.kit && p.kit !== 'synth' ? drumKitReady(p.kit) : null;
+  // A sampled kit spawns a fresh ToneBufferSource for every single hit -- and
+  // drums are half the audio cost on a device that cannot keep up. The synth kit
+  // uses persistent nodes and allocates nothing per hit, so that is what a
+  // struggling phone gets.
+  const kitMap = (p.kit && p.kit !== 'synth' && !LITE) ? drumKitReady(p.kit) : null;
   if (kitMap && p.drums !== 'none'){
     const dOut = fx(new Tone.Gain(Tone.dbToGain(TRACK_DB.drums || 0)));
     if (p.snare === 'dusty'){ const lp2 = fx(new Tone.Filter(2600*bf, 'lowpass')); dOut.connect(lp2); lp2.connect(bus); }
@@ -3599,6 +3606,11 @@ function makeRig(){
     // a sampled voice becomes: overlapping re-strikes, each a little softer.
     play(tr, notes, dur, time, vel){
       const i = inst[tr]; if (!i) return;
+      // Profiled on a struggling device: chords and drums are 85% of the audio
+      // cost, and a chord's cost is simply how many voices it starts. Three
+      // notes still spell the chord -- root, third, seventh or fifth -- so on a
+      // device that cannot keep up, the extra doublings are what goes.
+      if (LITE && notes.length > 3) notes = [notes[0], notes[1], notes[notes.length - 1]];
       const fire = (d, t, v) => i.mono ? i.n.triggerAttackRelease(hz(notes[0]), d, t, v)
                                        : i.n.triggerAttackRelease(notes.map(hz), d, t, v);
       if (i.n instanceof Tone.Sampler && i.n._sustains && dur > SMP_HOLD){
@@ -5716,7 +5728,7 @@ function initPads(){
 // they share one cause: the main thread is saturated, and on mobile the audio
 // callback starves with it. Rather than guess which phone can cope, measure.
 // ---------------------------------------------------------------------------
-let LITE = false, litePref = 'auto', diagFps = 0;
+let litePref = 'auto', diagFps = 0;   // LITE itself lives in audio.js, which reads it
 const lsGet = k => { try { return localStorage.getItem(k); } catch(e){ return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch(e){} };
 
@@ -5821,14 +5833,21 @@ async function diagStress(){
     });
     const secs = (performance.now() - p0) / 1000;
     stop();
+    const starving = stalls > 6 || worst > .12;
+    // A device that starves has just proved it: stop asking the idle numbers.
+    if (starving && litePref !== 'on'){ litePref = 'on'; lsSet('ss-lite', 'on'); setLite(true); }
     const fps = Math.round(frames / secs);
     out.textContent = [
       'WHILE ACTUALLY PLAYING',
       'frames     ' + fps + ' fps  (idle was ' + (diagFps || '?') + ')',
       'audio gaps ' + stalls + '   worst ' + Math.round(worst * 1000) + 'ms behind',
-      'verdict    ' + (stalls > 6 || worst > .12 ? 'AUDIO IS STARVING -- this is the distortion'
+      'verdict    ' + (starving ? 'AUDIO IS STARVING -- this is the distortion'
                      : fps < 25 ? 'frames are dropping but audio held up'
                      : 'this device coped fine'),
+      (starving && litePref !== 'on'
+        ? 'ACTION     lite mode turned on and saved. Reload, then run this again.'
+        : starving ? 'ACTION     already in lite mode. Try Samples: off as well.'
+        : ''),
       '',
       'reduced motion  ' + (matchMedia('(prefers-reduced-motion: reduce)').matches ? 'ON  <-- this stops the animations' : 'off'),
       'installed app   ' + (matchMedia('(display-mode: standalone)').matches ? 'yes' : 'no, running in a browser tab'),
