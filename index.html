@@ -679,6 +679,7 @@ html.lite .mon svg{filter:none!important}
           <div class="row">
             <button id="diagRun">Check this device</button>
             <button id="diagTone">Test tone</button>
+            <button id="diagStress">Play test</button>
             <button id="diagLite">Lite mode: auto</button>
             <button id="diagNoSmp">Samples: on</button>
           </div>
@@ -740,7 +741,7 @@ html.lite .mon svg{filter:none!important}
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build 05e0d544 &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build 3cc89539 &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -5763,6 +5764,8 @@ async function diagReport(){
     'cores      ' + (navigator.hardwareConcurrency || '?') + '   memory ' + (navigator.deviceMemory || '?') + 'GB',
     'screen     ' + innerWidth + 'x' + innerHeight + ' @' + (devicePixelRatio || 1) + 'x',
     'lite       ' + (LITE ? 'ON' : 'off') + ' (' + litePref + ')',
+    'reduced    ' + (matchMedia('(prefers-reduced-motion: reduce)').matches ? 'MOTION REDUCED (animations off)' : 'motion normal'),
+    'installed  ' + (matchMedia('(display-mode: standalone)').matches ? 'as an app' : 'browser tab'),
     'device     ' + navigator.userAgent.replace(/^Mozilla\/5\.0 \(/, '').slice(0, 110)
   ];
   out.textContent = L.join('\n');
@@ -5783,6 +5786,58 @@ async function diagTone(){
     if (out){ out.hidden = false; out.textContent = 'Could not start audio: ' + e.message; }
   }
 }
+
+// Idle numbers said both phones were fine, which was useless: the app is not
+// idle when it breaks. This runs the real thing -- a full rig, a real song --
+// and watches two things while it plays. Frames, and whether the AUDIO clock
+// keeps up with the wall clock. Web Audio will not report an underrun, but a
+// starved audio thread shows as Tone.now() falling behind real time, and that
+// is exactly what crackling and scratchiness are.
+async function diagStress(){
+  const out = $('#diagOut'); if (!out) return;
+  out.hidden = false;
+  out.textContent = 'Playing for six seconds, watching for glitches...';
+  try {
+    await Tone.start();
+    if (!song) build();
+    await play(0);
+    const a0 = Tone.now(), p0 = performance.now();
+    let frames = 0, worst = 0, stalls = 0, lastA = a0, lastP = p0;
+    await new Promise(done => {
+      const tick = () => {
+        frames++;
+        const a = Tone.now(), pnow = performance.now();
+        const dA = a - lastA, dP = (pnow - lastP) / 1000;
+        // audio time should advance with real time; a gap means the thread stalled
+        if (dP > .05){
+          const drift = dP - dA;
+          if (drift > worst) worst = drift;
+          if (drift > .02) stalls++;
+          lastA = a; lastP = pnow;
+        }
+        (pnow - p0 < 6000) ? requestAnimationFrame(tick) : done();
+      };
+      requestAnimationFrame(tick);
+    });
+    const secs = (performance.now() - p0) / 1000;
+    stop();
+    const fps = Math.round(frames / secs);
+    out.textContent = [
+      'WHILE ACTUALLY PLAYING',
+      'frames     ' + fps + ' fps  (idle was ' + (diagFps || '?') + ')',
+      'audio gaps ' + stalls + '   worst ' + Math.round(worst * 1000) + 'ms behind',
+      'verdict    ' + (stalls > 6 || worst > .12 ? 'AUDIO IS STARVING -- this is the distortion'
+                     : fps < 25 ? 'frames are dropping but audio held up'
+                     : 'this device coped fine'),
+      '',
+      'reduced motion  ' + (matchMedia('(prefers-reduced-motion: reduce)').matches ? 'ON  <-- this stops the animations' : 'off'),
+      'installed app   ' + (matchMedia('(display-mode: standalone)').matches ? 'yes' : 'no, running in a browser tab'),
+      'battery saver   ' + 'check Android settings -- it throttles the CPU and kills animations'
+    ].join('\n');
+  } catch(e){
+    out.textContent = 'Stress test failed: ' + e.message;
+  }
+}
 function initDiag(){
   const lb = $('#diagLite'), nb = $('#diagNoSmp');
   if (!lb) return;
@@ -5793,6 +5848,7 @@ function initDiag(){
   paint();
   if ($('#diagRun')) $('#diagRun').onclick = diagReport;
   if ($('#diagTone')) $('#diagTone').onclick = diagTone;
+  if ($('#diagStress')) $('#diagStress').onclick = diagStress;
   lb.onclick = () => {
     litePref = litePref === 'auto' ? 'on' : litePref === 'on' ? 'off' : 'auto';
     lsSet('ss-lite', litePref);
