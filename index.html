@@ -211,6 +211,11 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
 .magic .mhint{flex-basis:100%;font-size:13px;opacity:.7;margin:0}
 /* A finger is not a mouse: on any touch screen everything gets bigger. */
 
+/* The rainbow round cycles the whole monster through the spectrum. hue-rotate is
+   a compositor filter, so it costs the audio thread nothing. */
+.hsrainbow{animation:hsrainbow 4s linear infinite}
+@keyframes hsrainbow{to{filter:hue-rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){ .hsrainbow{animation:none} }
 /* ---- the band ----------------------------------------------------------
    A caught monster used to vanish, which deleted the only evidence she had
    done anything. Now it takes a seat down here holding whatever instrument it
@@ -288,13 +293,20 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
 .hshint{text-align:center;color:var(--muted);font-size:16px;margin:2px 0 12px}
 .hsfield{position:relative;height:min(56vh,440px);border-radius:22px;overflow:hidden;
   background:var(--panel);border:2px solid var(--line);touch-action:manipulation;user-select:none}
-.hsblob{position:absolute;z-index:2;border-radius:50%;pointer-events:none;
-  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.95),rgba(255,255,255,.5));
-  box-shadow:inset 0 -8px 18px rgba(150,120,190,.14)}
-@media (prefers-color-scheme:dark){ :root:not([data-theme=light]) .hsblob{
-  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.13),rgba(255,255,255,.05));box-shadow:none} }
-:root[data-theme=dark] .hsblob{
-  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.13),rgba(255,255,255,.05));box-shadow:none}
+/* Opaque, or "behind" does not read as hidden: at 50% alpha the monster showed
+   straight through the cloud it was supposed to be tucked behind. */
+.hsblob{position:absolute;z-index:2;pointer-events:none;
+  --blobfill:#FFFFFF;--blobedge:#E4E9F2}
+.hsblob svg{width:100%;height:100%;display:block;
+  filter:drop-shadow(0 4px 10px rgba(120,100,160,.16))}
+@media (prefers-color-scheme:dark){ :root:not([data-theme=light]) .hsblob{--blobfill:#2E2A52;--blobedge:#3C3768} }
+:root[data-theme=dark] .hsblob{--blobfill:#2E2A52;--blobedge:#3C3768}
+/* The house fills the field rather than being one of five scattered things. */
+.hsblob.hshouse,.hsbackdrop{position:absolute;left:6%;top:4%;width:88%;height:92%;pointer-events:none}
+.hsbackdrop{z-index:0;--paneink:#3A3358}
+.hsbackdrop svg{width:100%;height:100%;display:block}
+@media (prefers-color-scheme:dark){ :root:not([data-theme=light]) .hsbackdrop{--paneink:#120F26} }
+:root[data-theme=dark] .hsbackdrop{--paneink:#120F26}
 .hsmon{position:absolute;z-index:1;width:104px;height:104px;margin:-52px 0 0 -52px;border:0;padding:0;
   background:none;cursor:pointer;touch-action:manipulation;
   transition:transform .42s cubic-bezier(.22,.9,.3,1),opacity .3s}
@@ -639,7 +651,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build 4f338ca8 &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build 7c32551d &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -4711,7 +4723,7 @@ function renderStyles(){
 // by details and sparkles rather than by the body. Flat fills, no gradients,
 // rounded joins everywhere -- the chunkiness is what makes them read as cuddly
 // at thumbnail size, which is the size a three-year-old actually sees.
-const K_INK = '#2E2A38', K_CREAM = '#F8F3E6', K_BLUSH = '#EFAAB0';
+const K_INK = '#2E2A38', K_CREAM = 'var(--kbody,#F8F3E6)', K_BLUSH = '#EFAAB0';
 const kBody = (d, extra) => `<path d="${d}" fill="${K_CREAM}" stroke="${K_INK}" stroke-width="4.6" stroke-linejoin="round" stroke-linecap="round"${extra || ''}/>`;
 const kEye = (x, y, rx, ry) =>
   `<g class="meye"><ellipse cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" fill="${K_INK}"/>`
@@ -4901,10 +4913,35 @@ const HS_ORDER = ['bass', 'drums', 'pad', 'arp', 'lead'];
 const HS_GENRES = [['kids','uplifting'], ['chiptune','uplifting'], ['funk','uplifting'],
                    ['folk','uplifting'], ['retro','driving'], ['vapor','dreamy']];
 let hsOn = false, hsQueue = [], hsCaught = 0, hsEl = null, hsMove = null, hsDuck = null, hsPing = null;
-let hsSlots = [], hsSpawnAt = 0, hsBandRun = [];
+let hsSlots = [], hsSpawnAt = 0, hsRoundNo = 0;
 
 // What each caught monster is holding when it takes its seat. This is what
 // tells her WHICH part she just added -- the bar never could.
+// Eight rounds, each returning the monsters in a new colour. White is not in
+// here on purpose: the bodies are already cream and the sticker rim is white,
+// so a white monster on a pale sky would vanish -- the same trap the blobs and
+// the sparkles both fell into. Round one is their own colours instead, which
+// reads as "normal monsters" before they start transforming.
+const HS_TINTS = [
+  { name:'',        accent:null,      body:null },
+  { name:'Yellow',  accent:'#C98600', body:'#FFDE68' },
+  { name:'Orange',  accent:'#B24A06', body:'#FFB577' },
+  { name:'Green',   accent:'#1C7A33', body:'#8FDC9F' },
+  { name:'Blue',    accent:'#12538F', body:'#8CC3F5' },
+  { name:'Purple',  accent:'#5B23A0', body:'#C2A4F0' },
+  { name:'Red',     accent:'#A81026', body:'#FF9CAA' },
+  { name:'Rainbow', accent:'#A3106B', body:'#FFA5DB', rainbow:true }
+];
+const hsTint = () => HS_TINTS[hsRoundNo % HS_TINTS.length];
+// Paint one monster in the current round's colours. Natural rounds just use the
+// monster's own accent and leave the body alone.
+function hsPaint(el, mon, t){
+  t = t || hsTint();
+  if (t.body) el.style.setProperty('--kbody', t.body); else el.style.removeProperty('--kbody');
+  el.classList.toggle('hsrainbow', !!t.rainbow);
+  return mon.art(t.accent || mon.c[0]);
+}
+
 const HS_INST = {
   bass:  { name:'Bass',  svg:'<ellipse cx="10" cy="17" rx="8" ry="6.6" fill="#8C5BE0"/>'
         + '<rect x="12.6" y="3" width="3" height="12" rx="1.2" fill="#5A3490"/>'
@@ -4924,16 +4961,63 @@ const HS_INST = {
 };
 const hsInstSvg = tr => `<svg viewBox="0 0 24 24" aria-hidden="true">${(HS_INST[tr]||{}).svg||''}</svg>`;
 
+// Things to hide behind, and they change with the round so the scenery moves on
+// alongside the colour. Each one is drawn in a 0-100 box and stretched to fit,
+// so the same path works at any size.
+const HS_SHAPES = [
+  { n:'cloud',  d:'M22 72q-18 0-18-16 0-14 14-16 1-16 17-16 10 0 15 8 6-10 18-10 17 0 19 17 11 2 11 15 0 18-19 18Z' },
+  { n:'sun',    d:'M50 22a28 28 0 1 1-.1 0ZM50 2l5 9h-10ZM50 98l5-9h-10ZM2 50l9-5v10ZM98 50l-9-5v10ZM16 16l10 2-8 8ZM84 16l-2 10-8-8ZM16 84l2-10 8 8ZM84 84l-10-2 8-8Z' },
+  { n:'moon',   d:'M62 6a46 46 0 1 0 22 76A38 38 0 0 1 62 6Z' },
+  { n:'hill',   d:'M4 88q0-52 46-52t46 52Z' },
+  { n:'star',   d:'M50 4 63 36l34 3-26 23 8 34-29-18-29 18 8-34L3 39l34-3Z' },
+  { n:'castle', d:'M12 40h8v-12h10v12h10v-12h10v12h10v-12h10v12h8v52H12Z' },
+  { n:'tree',   d:'M50 6 84 52H64l14 22H22l14-22H16ZM43 74h14v22H43Z' },
+  // The final round. Not five things scattered about but one house with real
+  // hiding places: the openings are holes cut out of the path (evenodd), so a
+  // monster on the layer behind shows through a window and nowhere else.
+  { n:'house', house:true,
+    d:'M50 4 2 42h10v55h76V42h10Z'
+      + 'M40 97V79a10 10 0 0 1 20 0v18Z'
+      + 'M19 46h19v19H19Z M62 46h19v19H62Z M16 72h17v17H16Z M67 72h17v17H67Z',
+    // drawn AFTER the house so its fill covers the roof's outline where they
+    // meet -- painted before, the roofline cut a diagonal straight through it
+    chimney:'M65 6h11v22H65Z',
+    trim:'M28.5 46v19M19 55.5h19M71.5 46v19M62 55.5h19'
+       + 'M24.5 72v17M16 80.5h17M75.5 72v17M67 80.5h17'
+       + 'M50 84a2.6 2.6 0 1 1 0 .1',
+    // where a monster can appear: the four windows and the doorway
+    spots:[[28.5,55],[71.5,55],[24.5,80],[75.5,80],[50,86]] }
+];
+const hsShape = () => HS_SHAPES[hsRoundNo % HS_SHAPES.length];
+
 // Blobs are generated rather than hand-placed so none of them overlap: each one
 // is rejected and retried until it clears every blob already down.
 function hsBlobs(n){
   const f = $('#hsField'); if (!f) return;
-  f.querySelectorAll('.hsblob').forEach(b => b.remove());
+  f.querySelectorAll('.hsblob,.hsbackdrop').forEach(b => b.remove());
+  const sh = hsShape();
+  if (sh.house){
+    // Dark panes go on their own layer UNDER the monster, so a window reads as a
+    // room rather than a hole onto the sky, and the monster still sits in front.
+    const back = document.createElement('div');
+    back.className = 'hsbackdrop';
+    back.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">`
+      + `<path d="${sh.d.slice(sh.d.indexOf('M40 97'))}" fill="var(--paneink)" fill-rule="evenodd"/></svg>`;
+    f.appendChild(back);
+    const h = document.createElement('div');
+    h.className = 'hsblob hshouse';
+    h.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">`
+      + `<path d="${sh.d}" fill="var(--blobfill)" fill-rule="evenodd" stroke="var(--blobedge)" stroke-width="2" stroke-linejoin="round"/>`
+      + `<path d="${sh.chimney}" fill="var(--blobfill)" stroke="var(--blobedge)" stroke-width="2" stroke-linejoin="round"/>`
+      + `<path d="${sh.trim}" fill="none" stroke="var(--blobedge)" stroke-width="2.2" stroke-linecap="round"/></svg>`;
+    f.appendChild(h);
+    return;
+  }
   const put = [];
   for (let i = 0; i < n; i++){
     for (let tries = 0; tries < 220; tries++){
-      const w = 17 + Math.random() * 10;                 // % of field width
-      const hh = w * (.82 + Math.random() * .22) * 1.22; // % of field height
+      const w = 18 + Math.random() * 11;                 // % of field width
+      const hh = w * (.84 + Math.random() * .2) * 1.22;  // % of field height
       const x = 3 + Math.random() * (94 - w), y = 4 + Math.random() * (92 - hh);
       const cx = x + w/2, cy = y + hh/2;
       const clash = put.some(p => {
@@ -4946,6 +5030,9 @@ function hsBlobs(n){
       const b = document.createElement('div');
       b.className = 'hsblob';
       b.style.cssText = `left:${x}%;top:${y}%;width:${w}%;height:${hh}%`;
+      b.innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">`
+        + `<path d="${sh.d}" fill="var(--blobfill)" stroke="var(--blobedge)" stroke-width="2"`
+        + ` stroke-linejoin="round"/></svg>`;
       f.appendChild(b);
       break;
     }
@@ -4960,8 +5047,9 @@ function hsBand(){
   for (const s of hsSlots){
     const d = document.createElement('div');
     d.className = 'hsslot ' + (s.mon ? 'full' : 'empty');
+    const art = s.mon ? hsPaint(d, s.mon, s.tint) : '';
     d.innerHTML = (s.mon ? `<svg class="mon" viewBox="-6 -6 112 112" aria-hidden="true">`
-        + `<g class="mrim">${s.mon.art(s.mon.c[0])}</g>${s.mon.art(s.mon.c[0])}</svg>` : '')
+        + `<g class="mrim">${art}</g>${art}</svg>` : '')
       + `<span class="inst">${hsInstSvg(s.tr)}</span>`;
     d.setAttribute('aria-label', (s.mon ? s.mon.label + ' on ' : 'Still to find: ')
       + ((HS_INST[s.tr]||{}).name || s.tr));
@@ -4992,6 +5080,19 @@ function hsBeep(step){
 }
 
 function hsPlace(el){
+  const sh = hsShape();
+  if (sh.house && sh.spots){
+    // The house has real hiding places, so there is nothing to randomise but
+    // which one -- and never the one it is already standing in.
+    const last = +el.dataset.spot;
+    let k = Math.floor(Math.random() * sh.spots.length);
+    if (sh.spots.length > 1 && k === last) k = (k + 1 + Math.floor(Math.random() * (sh.spots.length - 1))) % sh.spots.length;
+    el.dataset.spot = k;
+    const HW = 88, HH = 92, HX = (100 - HW)/2, HY = (100 - HH)/2;   // the house's box in the field
+    el.style.left = (HX + sh.spots[k][0] / 100 * HW) + '%';
+    el.style.top  = (HY + sh.spots[k][1] / 100 * HH) + '%';
+    return;
+  }
   // Mostly at the edge of a blob, so it reads as coming out from behind something
   // rather than just teleporting around an empty field. Kept off the very edges
   // either way, so a tap near the rim still lands on the monster.
@@ -5015,7 +5116,7 @@ function hsSpawn(){
   const b = document.createElement('button');
   b.type = 'button'; b.className = 'hsmon';
   b.setAttribute('aria-label', 'Catch the ' + m.label + ' monster');
-  const art = m.art(m.c[0]);
+  const art = hsPaint(b, m);
   b.innerHTML = `<svg viewBox="-6 -6 112 112" aria-hidden="true"><g class="mrim">${art}</g>${art}</svg>`;
   hsPlace(b);
   b._mon = m;
@@ -5036,6 +5137,7 @@ function hsSpawn(){
 // catchable, it just does not sit still and wait.
 function hsDodge(e){
   if (!hsOn || !hsEl) return;
+  if (hsShape().house) return;   // a window is not somewhere to slide away from
   const f = $('#hsField').getBoundingClientRect(), r = hsEl.getBoundingClientRect();
   const cx = r.left + r.width/2, cy = r.top + r.height/2;
   const dx = e.clientX - cx, dy = e.clientY - cy;
@@ -5054,9 +5156,9 @@ function hsFly(from, mon, slotIndex, done){
   const to = slots[slotIndex];
   if (!to){ done(); return; }
   const a = from.getBoundingClientRect(), z = to.getBoundingClientRect();
-  const art = mon.art(mon.c[0]);
   const f = document.createElement('div');
   f.className = 'hsflier';
+  const art = hsPaint(f, mon);
   f.innerHTML = `<svg viewBox="-6 -6 112 112" aria-hidden="true"><g class="mrim">${art}</g>${art}</svg>`;
   f.style.left = (a.left + a.width/2) + 'px';
   f.style.top  = (a.top + a.height/2) + 'px';
@@ -5085,7 +5187,7 @@ function hsCatch(b){
   hsCaught++;
   if (tr) ui.mutes.delete(tr);          // the live Set the scheduler reads
   hsFly(b, mon, slotIndex, () => {
-    if (hsSlots[slotIndex]) hsSlots[slotIndex].mon = mon;
+    if (hsSlots[slotIndex]){ hsSlots[slotIndex].mon = mon; hsSlots[slotIndex].tint = hsTint(); }
     hsProgress();
   });
   if (hsQueue.length){
@@ -5118,6 +5220,7 @@ function hsBow(){
 // Re-rolling the seed keeps each genre's own character, which forcing the
 // parts on would have flattened.
 function hsRound(keepPlaying){
+  if (keepPlaying) hsRoundNo++;     // a finished round earns the next colour
   const [g, mood] = HS_GENRES[Math.floor(Math.random() * HS_GENRES.length)];
   ui.genre = g; ui.mood = mood; ui.style = null; ui.ref = null; ui.plan = null;
   let best = null;
@@ -5137,7 +5240,10 @@ function hsRound(keepPlaying){
   ui.solo = null;
   ui.mutes = new Set(hsQueue);          // chords carry the song until the rest arrive
   hsProgress();
-  hsSay('Find the monster!');
+  // The colour is how she knows she has moved on -- a round number would mean
+  // nothing at three, but naming the colour turns it into a colour game too.
+  const t = hsTint();
+  hsSay(t.rainbow ? 'Rainbow monsters!' : t.name ? t.name + ' monsters!' : 'Find the monster!');
   if (!keepPlaying){
     ui.endless = true;
     document.querySelectorAll('#sEndless,#aEndless,#mEndless').forEach(c => c.checked = true);
@@ -5150,6 +5256,7 @@ function hsRound(keepPlaying){
 
 function hsStart(){
   hsOn = true;
+  hsRoundNo = 0;
   const f = $('#hsField');
   if (f && !f.querySelector('.hssky')){
     const sky = document.createElement('div'); sky.className = 'hssky';
