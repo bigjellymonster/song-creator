@@ -211,11 +211,57 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
 .magic .mhint{flex-basis:100%;font-size:13px;opacity:.7;margin:0}
 /* A finger is not a mouse: on any touch screen everything gets bigger. */
 
+/* ---- unicorn princess sparkles ----------------------------------------
+   Everything here animates transform, opacity and filter only. Those are
+   composited off the main thread, which matters because this screen is the one
+   running audio on a 1.2s lookahead -- a layout-triggering animation here would
+   show up as a dropout, not as a slow sparkle. */
+.hssky{position:absolute;inset:0;pointer-events:none;border-radius:20px;
+  background:linear-gradient(120deg,#FFD6EF,#D9E3FF,#D4FBEE,#FFF4D2,#F0D9FF,#FFD6EF);
+  background-size:320% 320%;opacity:.85;
+  animation:hsdrift 52s ease-in-out infinite,hshue 96s linear infinite}
+@keyframes hsdrift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+@keyframes hshue{to{filter:hue-rotate(360deg)}}
+/* Dimming the pastel gradient just turns it grey. Night gets its own colours:
+   a deep twilight that hue-rotates through indigo, teal and violet. */
+@media (prefers-color-scheme:dark){ :root:not([data-theme=light]) .hssky{opacity:.9;
+  background:linear-gradient(120deg,#31174F,#17285E,#0F4350,#3D1B49,#31174F);background-size:320% 320%} }
+:root[data-theme=dark] .hssky{opacity:.9;
+  background:linear-gradient(120deg,#31174F,#17285E,#0F4350,#3D1B49,#31174F);background-size:320% 320%}
+.hsspark{position:absolute;pointer-events:none;width:15px;height:15px;margin:-7px 0 0 -7px;
+  opacity:0;will-change:transform,opacity;filter:drop-shadow(0 0 4px rgba(255,255,255,.9));
+  clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%);
+  animation:hstwinkle 4.2s ease-in-out infinite}
+@keyframes hstwinkle{
+  0%,100%{opacity:0;transform:translateY(0) scale(.3) rotate(0deg)}
+  45%{opacity:.95;transform:translateY(-14px) scale(1) rotate(70deg)}
+  70%{opacity:.3;transform:translateY(-26px) scale(.7) rotate(120deg)}}
+.hsburst{position:absolute;pointer-events:none;width:17px;height:17px;margin:-8px 0 0 -8px;
+  will-change:transform,opacity;filter:drop-shadow(0 0 5px rgba(255,255,255,.95));
+  clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%);
+  animation:hspop .95s cubic-bezier(.16,.8,.3,1) forwards}
+@keyframes hspop{
+  0%{opacity:1;transform:translate(0,0) scale(.3) rotate(0deg)}
+  100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(1.25) rotate(200deg)}}
+.hsbar i{background:linear-gradient(90deg,#FF9ED2,#9BB5FF,#7FE7C4,#FFD98A,#FF9ED2);
+  background-size:300% 100%;animation:hsdrift 14s linear infinite}
+.hsmon svg{animation:hsbobble 5.4s ease-in-out infinite}
+@keyframes hsbobble{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-5px) rotate(2deg)}}
+@media (prefers-reduced-motion:reduce){
+  .hssky,.hsspark,.hsbar i,.hsmon svg{animation:none}
+  .hsspark{opacity:.7}
+}
 /* ---- hide and seek ---- */
 .hshint{text-align:center;color:var(--muted);font-size:16px;margin:2px 0 12px}
 .hsfield{position:relative;height:min(56vh,440px);border-radius:22px;overflow:hidden;
   background:var(--panel);border:2px solid var(--line);touch-action:manipulation;user-select:none}
-.hsblob{position:absolute;border-radius:50%;background:var(--panel2);opacity:.9;pointer-events:none}
+.hsblob{position:absolute;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.95),rgba(255,255,255,.5));
+  box-shadow:inset 0 -8px 18px rgba(150,120,190,.14)}
+@media (prefers-color-scheme:dark){ :root:not([data-theme=light]) .hsblob{
+  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.13),rgba(255,255,255,.05));box-shadow:none} }
+:root[data-theme=dark] .hsblob{
+  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.13),rgba(255,255,255,.05));box-shadow:none}
 .hsmon{position:absolute;width:104px;height:104px;margin:-52px 0 0 -52px;border:0;padding:0;
   background:none;cursor:pointer;touch-action:manipulation;
   transition:transform .42s cubic-bezier(.22,.9,.3,1),opacity .3s}
@@ -565,7 +611,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build 1e78edc4 &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build 506c9c4d &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -4906,6 +4952,7 @@ function hsCatch(b){
   if (!hsOn || b !== hsEl) return;
   hsEl = null;
   clearInterval(hsMove); clearInterval(hsDuck);
+  hsBurst(parseFloat(b.style.left), parseFloat(b.style.top));
   b.classList.add('got');
   setTimeout(() => b.remove(), 420);
   const tr = hsQueue.shift();
@@ -4955,6 +5002,12 @@ function hsRound(keepPlaying){
 
 function hsStart(){
   hsOn = true;
+  const f = $('#hsField');
+  if (f && !f.querySelector('.hssky')){
+    const sky = document.createElement('div'); sky.className = 'hssky';
+    f.insertBefore(sky, f.firstChild);
+  }
+  hsSparkle(18);
   ui.look = 1.2;        // ~1s from tap to the instrument arriving, instead of ~3
   $('#hsGo').textContent = 'New game';
   hsRound(false);
@@ -4964,13 +5017,53 @@ function hsStop(){
   ui.look = 0;
   clearInterval(hsMove); clearInterval(hsDuck);
   hsEl = null;
-  const f = $('#hsField'); if (f) f.querySelectorAll('.hsmon').forEach(n => n.remove());
+  const f = $('#hsField');
+  if (f) f.querySelectorAll('.hsmon,.hsspark,.hsburst,.hssky').forEach(n => n.remove());
   ui.mutes = new Set();
   stop();
   $('#hsGo').textContent = 'Start';
   hsSay('Tap Start to play');
   hsProgress();
 }
+// Ambient sparkles, scattered once and left to loop on their own staggered
+// delays so they never pulse in unison.
+// Saturated, because these sit on a pale sky -- a white sparkle on pastel is
+// invisible, which is the same mistake the blobs made against a white panel.
+const HS_TINT = ['#FF63BF','#8E7BFF','#28CFA8','#FFB020','#FF5F7E','#39B6FF','#FFFFFF'];
+function hsSparkle(n){
+  const f = $('#hsField'); if (!f) return;
+  f.querySelectorAll('.hsspark').forEach(s => s.remove());
+  for (let i = 0; i < n; i++){
+    const s = document.createElement('i');
+    s.className = 'hsspark';
+    s.style.left = (4 + Math.random() * 92) + '%';
+    s.style.top  = (6 + Math.random() * 88) + '%';
+    s.style.background = HS_TINT[Math.floor(Math.random() * HS_TINT.length)];
+    const sc = .55 + Math.random() * .9;
+    s.style.width = s.style.height = (15 * sc) + 'px';
+    s.style.margin = `${-7.5*sc}px 0 0 ${-7.5*sc}px`;
+    s.style.animationDelay = (-Math.random() * 4.2) + 's';
+    s.style.animationDuration = (3.4 + Math.random() * 2.6) + 's';
+    f.appendChild(s);
+  }
+}
+// A catch throws a handful outward from wherever the monster was standing.
+function hsBurst(x, y){
+  const f = $('#hsField'); if (!f) return;
+  for (let i = 0; i < 14; i++){
+    const s = document.createElement('i');
+    s.className = 'hsburst';
+    s.style.left = x + '%'; s.style.top = y + '%';
+    s.style.background = HS_TINT[Math.floor(Math.random() * HS_TINT.length)];
+    const a = (i / 14) * Math.PI * 2 + Math.random() * .4, d = 46 + Math.random() * 62;
+    s.style.setProperty('--dx', Math.cos(a) * d + 'px');
+    s.style.setProperty('--dy', Math.sin(a) * d + 'px');
+    s.style.animationDelay = (Math.random() * .12) + 's';
+    f.appendChild(s);
+    setTimeout(() => s.remove(), 1200);
+  }
+}
+
 function initHideSeek(){
   const f = $('#hsField'); if (!f) return;
   f.addEventListener('pointermove', hsDodge);
