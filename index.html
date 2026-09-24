@@ -262,6 +262,14 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
 .padkey .mrim{display:none}
 /* An app-wide svg rule paints a white background, which sat over the pad colour
    as a white box -- not the sticker rim, which is what I blamed first. */
+/* Unlit by default, lit when it is a note worth pressing. The halo ring stays --
+   this sits under it. Only while the game is running: with nothing playing there
+   is no chord to fit, and a grid of dark pads would just look broken. */
+.padgrid.live .padkey:not(.oct){filter:brightness(.42) saturate(.45)}
+.padgrid.live .padkey.fits,.padgrid.live .padkey.call{filter:none}
+.padkey{transition:transform .09s,box-shadow .09s,filter .3s ease}
+.padkey.wrong{animation:padwrong .34s ease-in-out}
+@keyframes padwrong{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
 .padkey svg.mon{background:none;width:84%;height:84%;display:block;animation:hsplay 2.9s ease-in-out infinite;
   filter:drop-shadow(0 3px 5px rgba(0,0,0,.28))}
 .padkey:active,.padkey.hit{transform:translateY(5px);box-shadow:0 0 0 var(--pcd),0 3px 8px rgba(0,0,0,.2)}
@@ -701,7 +709,7 @@ button,.tab,.style,input[type=range]{touch-action:manipulation;-webkit-tap-highl
     (Jason Champion), including the Roland R-8 kits. Distorted electric guitar from
     <b>FreePats</b> (EGuitarFSBS distorted and jazz sets, CC0) and <b>Bread Bread's Overdriven Guitar</b> (public domain). Chord progressions drawn in part from
     <b>free-midi-chords</b> by Ludovic Drolez (MIT). Synthesised voices and all generated music are original.
-    <br><span id="buildId" style="opacity:.8">Build 6c2a6ac4 &middot; 24 Sep 2026</span>
+    <br><span id="buildId" style="opacity:.8">Build bf67619d &middot; 24 Sep 2026</span>
   </p>
 </div>
 <script id="samples">
@@ -5440,15 +5448,45 @@ const PAD_COL = [                            // rainbow, low to high
 let padOn = false, padFollow = false, padOct = 0, padSynth = null;
 let padMelody = [], padAt = 0, padGlowTimer = null;
 
-// Its own voice: the rig is busy playing the band, and a bell sits over a mix
-// without fighting anything in it.
+// Four voices rather than one, rotating every so often so the same timbre does
+// not wear out. Its own synth either way: the rig is busy playing the band, and
+// a struck sound sits over a mix without fighting anything in it.
+const PAD_VOICES = [
+  { n:'bell',    C:Tone.FMSynth, o:{ harmonicity:3.01, modulationIndex:1.8,
+      envelope:{ attack:.004, decay:1.6, sustain:.04, release:1.4 },
+      modulationEnvelope:{ attack:.002, decay:.35, sustain:0, release:.4 } }, db:-8, len:1.1 },
+  { n:'marimba', C:Tone.FMSynth, o:{ harmonicity:1.01, modulationIndex:3.2,
+      envelope:{ attack:.002, decay:.5, sustain:0, release:.4 },
+      modulationEnvelope:{ attack:.002, decay:.18, sustain:0, release:.2 } }, db:-6, len:.5 },
+  { n:'pluck',   C:Tone.Synth,   o:{ oscillator:{ type:'triangle' },
+      envelope:{ attack:.003, decay:.42, sustain:.02, release:.5 } }, db:-9, len:.5 },
+  { n:'celeste', C:Tone.FMSynth, o:{ harmonicity:5.01, modulationIndex:1.2,
+      envelope:{ attack:.003, decay:2.2, sustain:.02, release:1.8 },
+      modulationEnvelope:{ attack:.002, decay:.5, sustain:0, release:.6 } }, db:-11, len:1.5 }
+];
+let padVoiceIdx = 0, padPresses = 0, padSynths = [], padBuzz = null;
 function padVoice(){
-  if (padSynth) return padSynth;
-  padSynth = new Tone.PolySynth(Tone.FMSynth, { harmonicity:3.01, modulationIndex:1.8,
-    envelope:{ attack:.004, decay:1.6, sustain:.04, release:1.4 },
-    modulationEnvelope:{ attack:.002, decay:.35, sustain:0, release:.4 } }).toDestination();
-  padSynth.volume.value = -8;
-  return padSynth;
+  const v = PAD_VOICES[padVoiceIdx];
+  if (!padSynths[padVoiceIdx]){
+    const s = new Tone.PolySynth(v.C, v.o).toDestination();
+    s.volume.value = v.db;
+    padSynths[padVoiceIdx] = s;
+  }
+  return { s:padSynths[padVoiceIdx], len:v.len };
+}
+// Gentle, not a buzzer. A short slide down says "not that one" without telling
+// a three-year-old off, and it only ever fires where there IS a right answer.
+function padNope(){
+  try {
+    if (!padBuzz){
+      padBuzz = new Tone.Synth({ oscillator:{ type:'sine' },
+        envelope:{ attack:.004, decay:.26, sustain:0, release:.2 } }).toDestination();
+      padBuzz.volume.value = -14;
+    }
+    const t = Tone.now();
+    padBuzz.triggerAttackRelease(330, .16, t);
+    padBuzz.triggerAttackRelease(247, .22, t + .13);
+  } catch(e){}
 }
 const padMidi = deg => 60 + (song ? song.root : 0) + scalePc(deg) + padOct * 12;
 // A pad's pitch class, for asking whether it is in the chord underneath.
@@ -5473,17 +5511,25 @@ function padBurst(el, n){
 
 function padHit(deg, el){
   if (!padOn) return;
-  try { padVoice().triggerAttackRelease(Tone.Frequency(padMidi(deg), 'midi'), 1.1, undefined, .85); } catch(e){}
+  const wrong = padFollow && padMelody.length && padMelody[padAt] !== deg;
+  if (wrong){
+    padNope();
+    el.classList.remove('wrong'); void el.offsetWidth; el.classList.add('wrong');
+    setTimeout(() => el.classList.remove('wrong'), 360);
+    return;                      // no note, so a wrong press is never rewarded
+  }
+  const v = padVoice();
+  try { v.s.triggerAttackRelease(Tone.Frequency(padMidi(deg), 'midi'), v.len, undefined, .78 + Math.random() * .16); } catch(e){}
   el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit');
   setTimeout(() => el.classList.remove('hit'), 140);
   padBurst(el, el.classList.contains('fits') || el.classList.contains('call') ? 16 : 8);
+  // rotate the voice every so often rather than every press, which would just
+  // sound unstable
+  if (++padPresses % 11 === 0) padVoiceIdx = (padVoiceIdx + 1) % PAD_VOICES.length;
   if (padFollow && padMelody.length){
-    if (padMelody[padAt] === deg){
-      padAt = (padAt + 1) % padMelody.length;
-      padSay(padAt === 0 ? 'You played the whole tune!' : '');
-      padCall();
-    }
-    // a wrong pad costs nothing: the light simply stays where it is
+    padAt = (padAt + 1) % padMelody.length;
+    padSay(padAt === 0 ? 'You played the whole tune!' : '');
+    padCall();
   }
 }
 
@@ -5525,7 +5571,9 @@ function padGlow(){
   const set = new Set();
   if (at && at.ch) for (const iv of at.ch.iv) set.add(((at.ch.r + iv) % 12 + 12) % 12);
   $('#padGrid').querySelectorAll('.padkey[data-deg]').forEach(b => {
-    b.classList.toggle('fits', set.has(padPc(+b.dataset.deg)));
+    // In follow-along one pad is lit and it is the one to press. Lighting the
+    // chord tones as well would give her four bright pads and one right answer.
+    b.classList.toggle('fits', !padFollow && set.has(padPc(+b.dataset.deg)));
   });
 }
 
@@ -5566,6 +5614,7 @@ async function padStart(){
   await play(0);
   padBuildMelody();
   padCall();
+  $('#padGrid').classList.add('live');
   clearInterval(padGlowTimer);
   padGlowTimer = setInterval(padGlow, 220);
   padSay(padFollow ? 'Press the monster that lights up' : '');
@@ -5576,6 +5625,7 @@ function padStop(){
   ui.mutes = new Set();
   stop();
   $('#padGo').textContent = 'Start';
+  $('#padGrid').classList.remove('live');
   padSay('');
   $('#padGrid').querySelectorAll('.call,.fits').forEach(b => b.classList.remove('call','fits'));
 }
